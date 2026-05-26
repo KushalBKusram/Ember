@@ -56,29 +56,21 @@ final class DataSourcesViewModel {
         offsets.forEach { deleteDocument(documents[$0]) }
     }
 
-    func toggleCalendar(_ enabled: Bool) {
-        guard enabled else {
-            AppSettings.calendarEnabled = false
-            return
-        }
+    func requestCalendarAccess() {
         Task {
             let granted = await CalendarService.shared.requestCalendarAccess()
-            AppSettings.calendarEnabled = granted
             if !granted {
+                AppSettings.calendarEnabled = false
                 error = "Calendar access was denied. Enable it in Settings > Privacy."
             }
         }
     }
 
-    func toggleReminders(_ enabled: Bool) {
-        guard enabled else {
-            AppSettings.remindersEnabled = false
-            return
-        }
+    func requestRemindersAccess() {
         Task {
             let granted = await CalendarService.shared.requestRemindersAccess()
-            AppSettings.remindersEnabled = granted
             if !granted {
+                AppSettings.remindersEnabled = false
                 error = "Reminders access was denied. Enable it in Settings > Privacy."
             }
         }

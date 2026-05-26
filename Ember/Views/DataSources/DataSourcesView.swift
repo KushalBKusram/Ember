@@ -4,17 +4,23 @@ import UniformTypeIdentifiers
 struct DataSourcesView: View {
     @State private var viewModel = DataSourcesViewModel()
     @State private var showFilePicker = false
-    @State private var calendarEnabled = AppSettings.calendarEnabled
-    @State private var remindersEnabled = AppSettings.remindersEnabled
+    @AppStorage("calendarEnabled") private var calendarEnabled = false
+    @AppStorage("remindersEnabled") private var remindersEnabled = false
 
     var body: some View {
         Form {
             Section {
-                Toggle(isOn: calendarBinding) {
+                Toggle(isOn: $calendarEnabled) {
                     Label("Calendar", systemImage: "calendar")
                 }
-                Toggle(isOn: remindersBinding) {
+                .onChange(of: calendarEnabled) { _, newValue in
+                    if newValue { viewModel.requestCalendarAccess() }
+                }
+                Toggle(isOn: $remindersEnabled) {
                     Label("Reminders", systemImage: "checklist")
+                }
+                .onChange(of: remindersEnabled) { _, newValue in
+                    if newValue { viewModel.requestRemindersAccess() }
                 }
             } header: {
                 Text("Live Sources")
@@ -88,25 +94,4 @@ struct DataSourcesView: View {
         .onDisappear { viewModel.stopObserving() }
     }
 
-    // MARK: - Private
-
-    private var calendarBinding: Binding<Bool> {
-        Binding(
-            get: { calendarEnabled },
-            set: { newValue in
-                calendarEnabled = newValue
-                viewModel.toggleCalendar(newValue)
-            }
-        )
-    }
-
-    private var remindersBinding: Binding<Bool> {
-        Binding(
-            get: { remindersEnabled },
-            set: { newValue in
-                remindersEnabled = newValue
-                viewModel.toggleReminders(newValue)
-            }
-        )
-    }
 }
