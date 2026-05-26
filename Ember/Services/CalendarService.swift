@@ -26,16 +26,18 @@ actor CalendarService {
         let now = Date()
         let start = Calendar.current.date(byAdding: .day, value: -3, to: now) ?? now
         let end = Calendar.current.date(byAdding: .day, value: 30, to: now) ?? now
-        let predicate = store.predicateForEvents(withStart: start, end: end, calendars: nil)
+        let calendars = store.calendars(for: .event)
+        let predicate = store.predicateForEvents(withStart: start, end: end, calendars: calendars)
         return store.events(matching: predicate).map(formatEvent)
     }
 
     func fetchReminders() async -> [String] {
-        await withCheckedContinuation { continuation in
+        let calendars = store.calendars(for: .reminder)
+        return await withCheckedContinuation { continuation in
             let predicate = store.predicateForIncompleteReminders(
                 withDueDateStarting: nil,
                 ending: nil,
-                calendars: nil
+                calendars: calendars
             )
             store.fetchReminders(matching: predicate) { reminders in
                 continuation.resume(returning: (reminders ?? []).map(self.formatReminder))
