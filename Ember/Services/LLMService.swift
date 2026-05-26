@@ -71,10 +71,11 @@ actor LLMService {
             }.joined(separator: "\n\n")
             sections.append("""
 
-                --- Relevant information from your personal knowledge sources ---
+                --- Personal context retrieved from the user's own data ---
                 \(ragBlock)
-                --- End of knowledge context ---
-                Answer using this context when relevant. Do not mention these sources by name unless the user asks.
+                --- End of personal context ---
+                This is the user's real, current data. Treat it as ground truth and reference specific details \
+                from it naturally in your answer. Do not say where the information came from unless asked.
                 """)
         }
 

@@ -23,21 +23,31 @@ actor CalendarService {
     }
 
     func fetchEvents() -> [String] {
+        guard EKEventStore.authorizationStatus(for: .event) == .fullAccess else { return [] }
+
         let now = Date()
         let start = Calendar.current.date(byAdding: .day, value: -3, to: now) ?? now
         let end = Calendar.current.date(byAdding: .day, value: 30, to: now) ?? now
+
+        // Pass nil when empty: a non-nil empty array creates a predicate matching nothing
         let calendars = store.calendars(for: .event)
-        let predicate = store.predicateForEvents(withStart: start, end: end, calendars: calendars)
+        let predicate = store.predicateForEvents(
+            withStart: start,
+            end: end,
+            calendars: calendars.isEmpty ? nil : calendars
+        )
         return store.events(matching: predicate).map(formatEvent)
     }
 
     func fetchReminders() async -> [String] {
+        guard EKEventStore.authorizationStatus(for: .reminder) == .fullAccess else { return [] }
+
         let calendars = store.calendars(for: .reminder)
         return await withCheckedContinuation { continuation in
             let predicate = store.predicateForIncompleteReminders(
                 withDueDateStarting: nil,
                 ending: nil,
-                calendars: calendars
+                calendars: calendars.isEmpty ? nil : calendars
             )
             store.fetchReminders(matching: predicate) { reminders in
                 continuation.resume(returning: (reminders ?? []).map(self.formatReminder))
@@ -49,25 +59,28 @@ actor CalendarService {
 
     private func formatEvent(_ event: EKEvent) -> String {
         let formatter = DateFormatter()
-        formatter.dateStyle = .medium
+        formatter.dateStyle = .full
         formatter.timeStyle = event.isAllDay ? .none : .short
-        var parts = [event.title ?? "Untitled Event"]
-        parts.append("Date: \(formatter.string(from: event.startDate))")
-        if let loc = event.location, !loc.isEmpty { parts.append("Location: \(loc)") }
-        if let notes = event.notes, !notes.isEmpty { parts.append("Notes: \(notes)") }
-        return parts.joined(separator: " | ")
+
+        var desc = event.isAllDay
+            ? "\(event.title ?? "Untitled event") all day on \(formatter.string(from: event.startDate))"
+            : "\(event.title ?? "Untitled event") on \(formatter.string(from: event.startDate))"
+
+        if let loc = event.location, !loc.isEmpty { desc += " at \(loc)" }
+        if let notes = event.notes, !notes.isEmpty { desc += ". \(notes)" }
+        return desc
     }
 
     private func formatReminder(_ reminder: EKReminder) -> String {
-        var parts = [reminder.title ?? "Untitled Reminder"]
+        var desc = reminder.title ?? "Untitled reminder"
         if let components = reminder.dueDateComponents,
            let date = Calendar.current.date(from: components) {
             let formatter = DateFormatter()
-            formatter.dateStyle = .medium
+            formatter.dateStyle = .full
             formatter.timeStyle = .short
-            parts.append("Due: \(formatter.string(from: date))")
+            desc += " due \(formatter.string(from: date))"
         }
-        if let notes = reminder.notes, !notes.isEmpty { parts.append("Notes: \(notes)") }
-        return parts.joined(separator: " | ")
+        if let notes = reminder.notes, !notes.isEmpty { desc += ". \(notes)" }
+        return desc
     }
 }
