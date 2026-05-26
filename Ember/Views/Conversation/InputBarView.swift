@@ -53,7 +53,7 @@ struct InputBarView: View {
         } label: {
             Image(systemName: speech.isRecording ? "waveform" : "mic")
                 .font(.system(size: 18, weight: .medium))
-                .foregroundStyle(speech.isRecording ? .orange : .secondary)
+                .foregroundStyle(speech.isRecording ? Color.accentColor : .secondary)
                 .frame(width: 32, height: 32)
                 .symbolEffect(.variableColor.cumulative, isActive: speech.isRecording)
         }
@@ -66,7 +66,7 @@ struct InputBarView: View {
                 Button(action: onCancel) {
                     Image(systemName: "stop.circle.fill")
                         .font(.system(size: 28))
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(Color.accentColor)
                 }
                 .buttonStyle(.plain)
                 .transition(.scale.combined(with: .opacity))
@@ -76,7 +76,7 @@ struct InputBarView: View {
                 } label: {
                     Image(systemName: "arrow.up.circle.fill")
                         .font(.system(size: 28))
-                        .foregroundStyle(canSend ? .orange : .secondary)
+                        .foregroundStyle(canSend ? Color.accentColor : .secondary)
                 }
                 .buttonStyle(.plain)
                 .disabled(!canSend)

@@ -7,7 +7,7 @@ struct ConversationRowView: View {
         HStack(spacing: 12) {
             ZStack {
                 Circle()
-                    .fill(.orange.opacity(0.15))
+                    .fill(Color.accentColor.opacity(0.15))
                     .frame(width: 44, height: 44)
                 Text("🔥")
                     .font(.title3)

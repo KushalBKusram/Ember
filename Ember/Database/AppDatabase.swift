@@ -91,7 +91,7 @@ extension AppDatabase {
     func messages(for conversationId: UUID) throws -> [Message] {
         try dbPool.read { db in
             try Message
-                .filter(Column("conversationId") == conversationId.uuidString)
+                .filter(Column("conversationId") == conversationId)
                 .order(Column("createdAt").asc)
                 .fetchAll(db)
         }
@@ -100,7 +100,7 @@ extension AppDatabase {
     func messagesObservation(for conversationId: UUID) -> ValueObservation<ValueReducers.Fetch<[Message]>> {
         ValueObservation.tracking { db in
             try Message
-                .filter(Column("conversationId") == conversationId.uuidString)
+                .filter(Column("conversationId") == conversationId)
                 .order(Column("createdAt").asc)
                 .fetchAll(db)
         }
@@ -116,7 +116,7 @@ extension AppDatabase {
         try dbPool.write { db in
             try db.execute(
                 sql: "UPDATE conversation SET updatedAt = ? WHERE id = ?",
-                arguments: [Date(), id.uuidString]
+                arguments: [Date(), id]
             )
         }
     }

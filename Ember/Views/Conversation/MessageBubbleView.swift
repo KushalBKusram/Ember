@@ -28,7 +28,7 @@ struct MessageBubbleView: View {
             .background {
                 if isUser {
                     RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .fill(.orange)
+                        .fill(Color.accentColor)
                 } else {
                     RoundedRectangle(cornerRadius: 20, style: .continuous)
                         .fill(.ultraThinMaterial)
@@ -37,7 +37,7 @@ struct MessageBubbleView: View {
             .overlay {
                 if isStreaming {
                     RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .strokeBorder(.orange.opacity(0.4), lineWidth: 1)
+                        .strokeBorder(Color.accentColor.opacity(0.4), lineWidth: 1)
                 }
             }
     }
