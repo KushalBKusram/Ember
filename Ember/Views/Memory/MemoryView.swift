@@ -3,6 +3,7 @@ import SwiftUI
 struct MemoryView: View {
     @State private var viewModel = MemoryViewModel()
     @AppStorage("memoryEnabled") private var memoryEnabled = true
+    @AppStorage("userProfile") private var userProfile = ""
     @State private var showingClearConfirm = false
 
     var body: some View {
@@ -49,10 +50,51 @@ struct MemoryView: View {
         .onDisappear { viewModel.stopObserving() }
     }
 
+    // MARK: - Profile card
+
+    private var profileCard: some View {
+        Section {
+            VStack(alignment: .leading, spacing: 8) {
+                if viewModel.isRegeneratingProfile {
+                    HStack(spacing: 8) {
+                        ProgressView().controlSize(.small)
+                        Text("Rebuilding profile…")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                } else if userProfile.isEmpty {
+                    Text("Profile will appear here once Ember has learned enough about you.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text(userProfile)
+                        .font(.subheadline)
+                }
+            }
+            .padding(.vertical, 4)
+        } header: {
+            HStack {
+                Text("Your Profile")
+                Spacer()
+                Button {
+                    viewModel.regenerateProfile()
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.caption)
+                }
+                .disabled(viewModel.isRegeneratingProfile || viewModel.memories.isEmpty)
+            }
+        } footer: {
+            Text("Synthesised from your individual memories. This paragraph is what Ember reads at the start of every conversation.")
+        }
+    }
+
     // MARK: - Memory list
 
     private var memoryList: some View {
         List {
+            profileCard
+
             if !memoryEnabled {
                 Section {
                     HStack(spacing: 10) {

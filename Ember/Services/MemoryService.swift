@@ -10,8 +10,15 @@ actor MemoryService {
     private let extractionInstructions = """
         You extract memorable personal facts about a user from conversation exchanges.
         Extract ONLY facts explicitly stated by or about the user themselves.
-        Do NOT extract general knowledge, AI-generated answers, or trivial questions like "what's the capital of France?"
+        Do NOT extract general knowledge, AI-generated answers, or trivial questions.
         State each fact concisely and specifically.
+        """
+
+    private let synthesisInstructions = """
+        You are a precise summariser. Your only job is to synthesise a list of facts about a person \
+        into a short, natural biographical paragraph. Write exactly 2–4 sentences. Use third person. \
+        Blend related facts into cohesive statements — no lists, no bullet points, no preamble, \
+        no commentary. Output only the paragraph itself.
         """
 
     // MARK: - Extraction (background, best-effort)
@@ -33,6 +40,7 @@ actor MemoryService {
                 generating: ExtractedMemoryList.self
             )
 
+            var savedAny = false
             for fact in result.content.facts {
                 let trimmed = fact.content.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !trimmed.isEmpty else { continue }
@@ -45,18 +53,51 @@ actor MemoryService {
                 }
 
                 try db.saveMemory(&memory)
+                savedAny = true
+            }
+
+            if savedAny {
+                await synthesizeProfile()
             }
         } catch {
             // Extraction is best-effort — silent failure is acceptable
         }
     }
 
-    // MARK: - Retrieval
+    // MARK: - Profile synthesis
 
-    func retrieveRelevant(for text: String, limit: Int = 8) async throws -> [Memory] {
-        let all = try db.activeMemories()
-        guard !all.isEmpty else { return [] }
-        return await embedder.rankMemories(all, for: text, limit: limit)
+    func synthesizeProfile() async {
+        let memories = (try? db.activeMemories()) ?? []
+        let enabled = memories.filter { $0.isEnabled }
+        guard !enabled.isEmpty else {
+            AppSettings.userProfile = ""
+            return
+        }
+
+        let byCategory = Dictionary(grouping: enabled, by: \.category)
+        var categoryBlocks: [String] = []
+        for category in Memory.Category.allCases {
+            guard let facts = byCategory[category], !facts.isEmpty else { continue }
+            let lines = facts.map { "- \($0.content)" }.joined(separator: "\n")
+            categoryBlocks.append("\(category.label):\n\(lines)")
+        }
+        let factList = categoryBlocks.joined(separator: "\n\n")
+
+        do {
+            let session = LanguageModelSession(instructions: synthesisInstructions)
+            let result = try await session.respond(to: factList)
+            let profile = result.content.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !profile.isEmpty {
+                AppSettings.userProfile = profile
+            }
+        } catch {
+            // Keep existing profile on failure
+        }
+    }
+
+    func synthesizeProfileIfNeeded() async {
+        guard AppSettings.userProfile.isEmpty else { return }
+        await synthesizeProfile()
     }
 
     // MARK: - Management
@@ -65,13 +106,16 @@ actor MemoryService {
         var updated = memory
         updated.isEnabled = !updated.isEnabled
         try db.saveMemory(&updated)
+        Task { await synthesizeProfile() }
     }
 
     func delete(_ memory: Memory) throws {
         try db.deleteMemory(memory)
+        Task { await synthesizeProfile() }
     }
 
     func clearAll() throws {
         try db.clearAllMemories()
+        AppSettings.userProfile = ""
     }
 }

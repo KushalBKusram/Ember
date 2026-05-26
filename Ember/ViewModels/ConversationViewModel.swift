@@ -73,11 +73,13 @@ final class ConversationViewModel {
             return
         }
 
-        // Retrieve relevant memories before streaming
-        var memories: [Memory] = []
+        // Inject synthesised user profile (no per-message retrieval needed)
+        var userProfile = ""
         if AppSettings.memoryEnabled && !isIncognito {
-            memories = (try? await MemoryService.shared.retrieveRelevant(for: text)) ?? []
-            injectedMemoryCount = memories.count
+            userProfile = AppSettings.userProfile
+            injectedMemoryCount = userProfile.isEmpty
+                ? 0
+                : ((try? AppDatabase.shared.activeMemories().count) ?? 0)
         }
 
         // Retrieve RAG context
@@ -96,7 +98,7 @@ final class ConversationViewModel {
             let stream = await llm.streamResponse(
                 to: text,
                 history: history,
-                memories: memories,
+                userProfile: userProfile,
                 ragContext: ragContext
             )
             for try await chunk in stream {

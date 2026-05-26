@@ -13,14 +13,14 @@ actor LLMService {
     func streamResponse(
         to userMessage: String,
         history: [Message],
-        memories: [Memory] = [],
+        userProfile: String = "",
         ragContext: [RAGResult] = [],
         systemPrompt: String? = nil
     ) -> AsyncThrowingStream<String, Error> {
         let instructions = buildInstructions(
             base: systemPrompt ?? defaultSystemPrompt,
             history: history,
-            memories: memories,
+            userProfile: userProfile,
             ragContext: ragContext
         )
 
@@ -45,24 +45,19 @@ actor LLMService {
     private func buildInstructions(
         base: String,
         history: [Message],
-        memories: [Memory],
+        userProfile: String,
         ragContext: [RAGResult]
     ) -> String {
         var sections = [base]
 
-        if !memories.isEmpty {
-            let memBlock = memories
-                .filter { $0.isEnabled }
-                .map { "[\($0.category.rawValue)] \($0.content)" }
-                .joined(separator: "\n")
-            if !memBlock.isEmpty {
-                sections.append("""
+        if !userProfile.isEmpty {
+            sections.append("""
 
-                    --- What Ember remembers about you (use naturally, don't announce) ---
-                    \(memBlock)
-                    --- End of memories ---
-                    """)
-            }
+                --- Who you are talking to ---
+                \(userProfile)
+                --- End of profile ---
+                Use this to personalise your tone and answers naturally. Do not announce that you have a profile.
+                """)
         }
 
         if !ragContext.isEmpty {

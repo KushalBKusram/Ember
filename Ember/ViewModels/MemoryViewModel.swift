@@ -5,8 +5,8 @@ import GRDB
 @Observable
 final class MemoryViewModel {
     var memories: [Memory] = []
-    var isLoading = false
     var searchQuery = ""
+    var isRegeneratingProfile = false
 
     private let db = AppDatabase.shared
     private let service = MemoryService.shared
@@ -36,6 +36,8 @@ final class MemoryViewModel {
                 // Non-fatal
             }
         }
+
+        Task { await service.synthesizeProfileIfNeeded() }
     }
 
     func stopObserving() {
@@ -53,5 +55,14 @@ final class MemoryViewModel {
 
     func clearAll() {
         Task { try? await service.clearAll() }
+    }
+
+    func regenerateProfile() {
+        guard !isRegeneratingProfile else { return }
+        isRegeneratingProfile = true
+        Task {
+            await service.synthesizeProfile()
+            isRegeneratingProfile = false
+        }
     }
 }

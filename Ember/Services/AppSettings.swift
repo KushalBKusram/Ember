@@ -20,4 +20,9 @@ enum AppSettings {
         get { UserDefaults.standard.bool(forKey: "remindersEnabled") }
         set { UserDefaults.standard.set(newValue, forKey: "remindersEnabled") }
     }
+
+    static var userProfile: String {
+        get { UserDefaults.standard.string(forKey: "userProfile") ?? "" }
+        set { UserDefaults.standard.set(newValue, forKey: "userProfile") }
+    }
 }
