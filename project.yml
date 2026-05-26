@@ -1,0 +1,49 @@
+name: Ember
+options:
+  bundleIdPrefix: com.kushal
+  deploymentTarget:
+    iOS: "26.0"
+  developmentLanguage: en
+  createIntermediateGroups: true
+
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    IPHONEOS_DEPLOYMENT_TARGET: "26.0"
+    SWIFT_STRICT_CONCURRENCY: complete
+
+targets:
+  Ember:
+    type: application
+    platform: iOS
+    deploymentTarget: "26.0"
+    sources:
+      - Ember/
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.kushal.ember
+        SWIFT_VERSION: "6.0"
+        IPHONEOS_DEPLOYMENT_TARGET: "26.0"
+        SWIFT_STRICT_CONCURRENCY: complete
+        DEVELOPMENT_ASSET_PATHS: '"Ember/Preview Content"'
+        ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS: YES
+    info:
+      path: Ember/Info.plist
+      properties:
+        CFBundleDisplayName: Ember
+        CFBundleVersion: "1"
+        CFBundleShortVersionString: "1.0.0"
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        NSMicrophoneUsageDescription: "Ember uses your microphone for voice input."
+        NSSpeechRecognitionUsageDescription: "Ember uses speech recognition to convert your voice to text."
+        NSCalendarsFullAccessUsageDescription: "Ember can read your calendar to answer questions about your schedule."
+        NSRemindersFullAccessUsageDescription: "Ember can read your reminders to help manage your tasks."
+    dependencies:
+      - package: GRDB
+
+packages:
+  GRDB:
+    url: https://github.com/groue/GRDB.swift
+    from: "6.0.0"
