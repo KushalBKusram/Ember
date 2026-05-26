@@ -49,6 +49,18 @@ struct SettingsView: View {
                     Text("When enabled, Ember learns facts about you from conversations and uses them to personalise future responses. All memory stays on-device.")
                 }
 
+                Section {
+                    NavigationLink {
+                        DataSourcesView()
+                    } label: {
+                        Label("Knowledge Sources", systemImage: "doc.text.magnifyingglass")
+                    }
+                } header: {
+                    Text("RAG")
+                } footer: {
+                    Text("Connect your calendar, reminders, and documents so Ember can answer questions using your personal data.")
+                }
+
                 Section("Privacy") {
                     LabeledContent("Cloud Sync", value: "Never")
                     LabeledContent("Analytics", value: "None")

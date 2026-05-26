@@ -15,6 +15,7 @@ struct ConversationView: View {
         VStack(spacing: 0) {
             messageList
             memoryIndicator
+            sourceAttributionBar
             InputBarView(
                 text: $inputText,
                 isStreaming: viewModel.isStreaming,
@@ -26,6 +27,7 @@ struct ConversationView: View {
         }
         .navigationTitle(conversation.title)
         .navigationBarTitleDisplayMode(.inline)
+        .animation(.easeInOut(duration: 0.2), value: viewModel.ragSources.isEmpty)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button {
@@ -66,6 +68,7 @@ struct ConversationView: View {
             .scrollDismissesKeyboard(.interactively)
             .onChange(of: viewModel.messages.count) { scrollToBottom(proxy: proxy) }
             .onChange(of: viewModel.streamingContent) { scrollToBottom(proxy: proxy) }
+            .onChange(of: viewModel.ragSources.count) { scrollToBottom(proxy: proxy) }
         }
     }
 
@@ -73,9 +76,7 @@ struct ConversationView: View {
 
     @ViewBuilder
     private var memoryIndicator: some View {
-        if viewModel.injectedMemoryCount > 0 && !viewModel.isStreaming {
-            EmptyView()
-        } else if viewModel.isStreaming && viewModel.injectedMemoryCount > 0 {
+        if viewModel.isStreaming && viewModel.injectedMemoryCount > 0 {
             HStack(spacing: 4) {
                 Image(systemName: "brain.head.profile")
                     .font(.caption2)
@@ -88,6 +89,35 @@ struct ConversationView: View {
             .background(.ultraThinMaterial, in: Capsule())
             .padding(.bottom, 4)
             .transition(.opacity.combined(with: .scale))
+        }
+    }
+
+    // MARK: - Source attribution
+
+    @ViewBuilder
+    private var sourceAttributionBar: some View {
+        if !viewModel.ragSources.isEmpty && !viewModel.isStreaming {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    let uniqueSources = Array(
+                        Dictionary(grouping: viewModel.ragSources, by: \.sourceTitle)
+                            .keys.sorted()
+                    )
+                    ForEach(uniqueSources, id: \.self) { title in
+                        if let source = viewModel.ragSources.first(where: { $0.sourceTitle == title }) {
+                            Label(title, systemImage: source.sourceIcon)
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(.ultraThinMaterial, in: Capsule())
+                        }
+                    }
+                }
+                .padding(.horizontal)
+            }
+            .padding(.bottom, 4)
+            .transition(.opacity.combined(with: .move(edge: .bottom)))
         }
     }
 

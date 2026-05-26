@@ -10,6 +10,7 @@ final class ConversationViewModel {
     var error: String?
     var isIncognito = false
     var injectedMemoryCount = 0
+    var ragSources: [RAGResult] = []
 
     let conversation: Conversation
     private let db = AppDatabase.shared
@@ -61,6 +62,7 @@ final class ConversationViewModel {
     private func performSend(_ text: String) async {
         error = nil
         injectedMemoryCount = 0
+        ragSources = []
 
         var userMsg = Message(conversationId: conversation.id, role: .user, content: text)
         do {
@@ -78,13 +80,25 @@ final class ConversationViewModel {
             injectedMemoryCount = memories.count
         }
 
+        // Retrieve RAG context
+        var ragContext: [RAGResult] = []
+        if !isIncognito {
+            ragContext = (try? await RAGService.shared.retrieve(for: text)) ?? []
+            ragSources = ragContext
+        }
+
         isStreaming = true
         streamingContent = ""
 
         let history = messages.filter { $0.id != userMsg.id }
 
         do {
-            let stream = await llm.streamResponse(to: text, history: history, memories: memories)
+            let stream = await llm.streamResponse(
+                to: text,
+                history: history,
+                memories: memories,
+                ragContext: ragContext
+            )
             for try await chunk in stream {
                 guard !Task.isCancelled else { break }
                 streamingContent = chunk

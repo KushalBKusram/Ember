@@ -14,12 +14,14 @@ actor LLMService {
         to userMessage: String,
         history: [Message],
         memories: [Memory] = [],
+        ragContext: [RAGResult] = [],
         systemPrompt: String? = nil
     ) -> AsyncThrowingStream<String, Error> {
         let instructions = buildInstructions(
             base: systemPrompt ?? defaultSystemPrompt,
             history: history,
-            memories: memories
+            memories: memories,
+            ragContext: ragContext
         )
 
         return AsyncThrowingStream { continuation in
@@ -40,7 +42,12 @@ actor LLMService {
 
     // MARK: - Private
 
-    private func buildInstructions(base: String, history: [Message], memories: [Memory]) -> String {
+    private func buildInstructions(
+        base: String,
+        history: [Message],
+        memories: [Memory],
+        ragContext: [RAGResult]
+    ) -> String {
         var sections = [base]
 
         if !memories.isEmpty {
@@ -56,6 +63,19 @@ actor LLMService {
                     --- End of memories ---
                     """)
             }
+        }
+
+        if !ragContext.isEmpty {
+            let ragBlock = ragContext.map { result in
+                "[\(result.sourceTitle)] \(result.content)"
+            }.joined(separator: "\n\n")
+            sections.append("""
+
+                --- Relevant information from your personal knowledge sources ---
+                \(ragBlock)
+                --- End of knowledge context ---
+                Answer using this context when relevant. Do not mention these sources by name unless the user asks.
+                """)
         }
 
         if !history.isEmpty {

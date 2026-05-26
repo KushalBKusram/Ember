@@ -63,6 +63,30 @@ final class AppDatabase: Sendable {
             try db.create(indexOn: "memory", columns: ["isEnabled", "expiresAt"])
         }
 
+        migrator.registerMigration("v3_rag") { db in
+            try db.create(table: "rag_document") { t in
+                t.primaryKey("id", .text)
+                t.column("title", .text).notNull()
+                t.column("source", .text).notNull()
+                t.column("sourceIdentifier", .text)
+                t.column("indexedAt", .datetime).notNull()
+                t.column("isEnabled", .boolean).notNull().defaults(to: true)
+                t.column("chunkCount", .integer).notNull().defaults(to: 0)
+            }
+
+            try db.create(table: "rag_chunk") { t in
+                t.primaryKey("id", .text)
+                t.column("documentId", .text).notNull()
+                    .references("rag_document", onDelete: .cascade)
+                t.column("content", .text).notNull()
+                t.column("chunkIndex", .integer).notNull()
+                t.column("embedding", .blob)
+                t.column("createdAt", .datetime).notNull()
+            }
+
+            try db.create(indexOn: "rag_chunk", columns: ["documentId", "chunkIndex"])
+        }
+
         try migrator.migrate(dbPool)
     }
 }
@@ -172,6 +196,75 @@ extension AppDatabase {
     func clearAllMemories() throws {
         try dbPool.write { db in
             _ = try Memory.deleteAll(db)
+        }
+    }
+}
+
+// MARK: - RAG Document queries
+
+extension AppDatabase {
+    func allRAGDocuments() throws -> [RAGDocument] {
+        try dbPool.read { db in
+            try RAGDocument.order(Column("indexedAt").desc).fetchAll(db)
+        }
+    }
+
+    func allRAGDocumentsObservation() -> ValueObservation<ValueReducers.Fetch<[RAGDocument]>> {
+        ValueObservation.tracking { db in
+            try RAGDocument.order(Column("indexedAt").desc).fetchAll(db)
+        }
+    }
+
+    func saveRAGDocument(_ doc: inout RAGDocument) throws {
+        try dbPool.write { db in
+            try doc.save(db)
+        }
+    }
+
+    func deleteRAGDocument(_ doc: RAGDocument) throws {
+        try dbPool.write { db in
+            _ = try doc.delete(db)
+        }
+    }
+}
+
+// MARK: - RAG Chunk queries
+
+extension AppDatabase {
+    func ragChunks(for documentId: UUID) throws -> [RAGChunk] {
+        try dbPool.read { db in
+            try RAGChunk
+                .filter(Column("documentId") == documentId)
+                .order(Column("chunkIndex").asc)
+                .fetchAll(db)
+        }
+    }
+
+    func saveRAGChunk(_ chunk: inout RAGChunk) throws {
+        try dbPool.write { db in
+            try chunk.save(db)
+        }
+    }
+
+    func deleteRAGChunks(for documentId: UUID) throws {
+        try dbPool.write { db in
+            try RAGChunk.filter(Column("documentId") == documentId).deleteAll(db)
+        }
+    }
+
+    func allRAGChunks() throws -> [(chunk: RAGChunk, document: RAGDocument)] {
+        try dbPool.read { db in
+            let docs = try RAGDocument
+                .filter(Column("isEnabled") == true)
+                .fetchAll(db)
+            var results: [(RAGChunk, RAGDocument)] = []
+            for doc in docs {
+                let chunks = try RAGChunk
+                    .filter(Column("documentId") == doc.id)
+                    .fetchAll(db)
+                results.append(contentsOf: chunks.map { ($0, doc) })
+            }
+            return results
         }
     }
 }
