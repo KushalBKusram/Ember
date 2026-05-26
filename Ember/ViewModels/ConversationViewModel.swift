@@ -8,6 +8,8 @@ final class ConversationViewModel {
     var streamingContent = ""
     var isStreaming = false
     var error: String?
+    var isIncognito = false
+    var injectedMemoryCount = 0
 
     let conversation: Conversation
     private let db = AppDatabase.shared
@@ -29,7 +31,7 @@ final class ConversationViewModel {
                     self.messages = updated
                 }
             } catch {
-                // Observation ended — non-fatal
+                // Non-fatal
             }
         }
     }
@@ -42,19 +44,14 @@ final class ConversationViewModel {
     func send(_ text: String) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, !isStreaming else { return }
-
         streamingTask?.cancel()
-        streamingTask = Task {
-            await performSend(trimmed)
-        }
+        streamingTask = Task { await performSend(trimmed) }
     }
 
     func cancelStreaming() {
         streamingTask?.cancel()
         streamingTask = nil
-        if !streamingContent.isEmpty {
-            finalizeStream()
-        }
+        if !streamingContent.isEmpty { finalizeStream() }
         isStreaming = false
         streamingContent = ""
     }
@@ -63,6 +60,7 @@ final class ConversationViewModel {
 
     private func performSend(_ text: String) async {
         error = nil
+        injectedMemoryCount = 0
 
         var userMsg = Message(conversationId: conversation.id, role: .user, content: text)
         do {
@@ -73,25 +71,35 @@ final class ConversationViewModel {
             return
         }
 
+        // Retrieve relevant memories before streaming
+        var memories: [Memory] = []
+        if AppSettings.memoryEnabled && !isIncognito {
+            memories = (try? await MemoryService.shared.retrieveRelevant(for: text)) ?? []
+            injectedMemoryCount = memories.count
+        }
+
         isStreaming = true
         streamingContent = ""
 
         let history = messages.filter { $0.id != userMsg.id }
 
         do {
-            let stream = await llm.streamResponse(to: text, history: history)
+            let stream = await llm.streamResponse(to: text, history: history, memories: memories)
             for try await chunk in stream {
                 guard !Task.isCancelled else { break }
                 streamingContent = chunk
             }
         } catch {
             if !Task.isCancelled {
-                self.error = "Failed to get response. Please try again."
+                self.error = "Model unavailable. Make sure Apple Intelligence is enabled in Settings."
             }
         }
 
         if !Task.isCancelled, !streamingContent.isEmpty {
             finalizeStream()
+            if !isIncognito {
+                triggerMemoryExtraction(userMessage: userMsg)
+            }
         }
 
         isStreaming = false
@@ -107,16 +115,30 @@ final class ConversationViewModel {
         try? db.touchConversation(id: conversation.id)
         streamingContent = ""
 
-        if conversation.title == "New Conversation", let firstUserMsg = messages.first(where: { $0.role == .user }) {
-            autoTitle(from: firstUserMsg.content)
+        if conversation.title == "New Conversation",
+           let firstUser = messages.first(where: { $0.role == .user }) {
+            autoTitle(from: firstUser.content)
+        }
+    }
+
+    private func triggerMemoryExtraction(userMessage: Message) {
+        let conversationId = conversation.id
+        Task.detached(priority: .background) {
+            let db = AppDatabase.shared
+            let msgs = (try? db.messages(for: conversationId)) ?? []
+            guard let lastUser = msgs.last(where: { $0.role == .user }),
+                  let lastAssistant = msgs.last(where: { $0.role == .assistant }) else { return }
+            await MemoryService.shared.processExchange(
+                userMessage: lastUser,
+                assistantMessage: lastAssistant
+            )
         }
     }
 
     private func autoTitle(from text: String) {
         let words = text.split(separator: " ").prefix(5).joined(separator: " ")
-        let title = words.isEmpty ? "Conversation" : words
         var updated = conversation
-        updated.title = String(title)
+        updated.title = words.isEmpty ? "Conversation" : String(words)
         updated.updatedAt = Date()
         try? db.save(&updated)
     }

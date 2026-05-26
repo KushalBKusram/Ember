@@ -49,6 +49,20 @@ final class AppDatabase: Sendable {
             )
         }
 
+        migrator.registerMigration("v2_memory") { db in
+            try db.create(table: "memory") { t in
+                t.primaryKey("id", .text)
+                t.column("content", .text).notNull()
+                t.column("category", .text).notNull()
+                t.column("embedding", .blob)
+                t.column("createdAt", .datetime).notNull()
+                t.column("lastAccessedAt", .datetime).notNull()
+                t.column("expiresAt", .datetime)
+                t.column("isEnabled", .boolean).notNull().defaults(to: true)
+            }
+            try db.create(indexOn: "memory", columns: ["isEnabled", "expiresAt"])
+        }
+
         try migrator.migrate(dbPool)
     }
 }
@@ -118,6 +132,46 @@ extension AppDatabase {
                 sql: "UPDATE conversation SET updatedAt = ? WHERE id = ?",
                 arguments: [Date(), id]
             )
+        }
+    }
+}
+
+// MARK: - Memory queries
+
+extension AppDatabase {
+    func activeMemories() throws -> [Memory] {
+        try dbPool.read { db in
+            try Memory
+                .filter(Column("isEnabled") == true)
+                .filter(Column("expiresAt") == nil || Column("expiresAt") > Date())
+                .order(Column("lastAccessedAt").desc)
+                .fetchAll(db)
+        }
+    }
+
+    func allMemoriesObservation() -> ValueObservation<ValueReducers.Fetch<[Memory]>> {
+        ValueObservation.tracking { db in
+            try Memory
+                .order(Column("category").asc, Column("createdAt").desc)
+                .fetchAll(db)
+        }
+    }
+
+    func saveMemory(_ memory: inout Memory) throws {
+        try dbPool.write { db in
+            try memory.save(db)
+        }
+    }
+
+    func deleteMemory(_ memory: Memory) throws {
+        try dbPool.write { db in
+            _ = try memory.delete(db)
+        }
+    }
+
+    func clearAllMemories() throws {
+        try dbPool.write { db in
+            _ = try Memory.deleteAll(db)
         }
     }
 }

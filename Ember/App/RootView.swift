@@ -7,7 +7,7 @@ struct RootView: View {
                 ConversationListView()
             }
             Tab("Memory", systemImage: "brain.head.profile") {
-                MemoryStubView()
+                MemoryView()
             }
             Tab("Settings", systemImage: "gearshape.fill") {
                 SettingsView()

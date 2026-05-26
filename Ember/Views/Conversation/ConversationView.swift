@@ -5,7 +5,6 @@ struct ConversationView: View {
     @State private var viewModel: ConversationViewModel
     @State private var inputText = ""
     @FocusState private var inputFocused: Bool
-    @Environment(\.dismiss) private var dismiss
 
     init(conversation: Conversation) {
         self.conversation = conversation
@@ -15,6 +14,7 @@ struct ConversationView: View {
     var body: some View {
         VStack(spacing: 0) {
             messageList
+            memoryIndicator
             InputBarView(
                 text: $inputText,
                 isStreaming: viewModel.isStreaming,
@@ -26,6 +26,17 @@ struct ConversationView: View {
         }
         .navigationTitle(conversation.title)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    viewModel.isIncognito.toggle()
+                } label: {
+                    Image(systemName: viewModel.isIncognito ? "theatermasks.fill" : "theatermasks")
+                        .foregroundStyle(viewModel.isIncognito ? Color.accentColor : .secondary)
+                }
+                .help(viewModel.isIncognito ? "Incognito on — memory paused" : "Incognito off — memory active")
+            }
+        }
         .onAppear { viewModel.startObserving() }
         .onDisappear { viewModel.stopObserving() }
     }
@@ -42,8 +53,7 @@ struct ConversationView: View {
                     }
 
                     if viewModel.isStreaming {
-                        streamingBubble
-                            .id("streaming")
+                        streamingBubble.id("streaming")
                     }
 
                     if let error = viewModel.error {
@@ -54,14 +64,34 @@ struct ConversationView: View {
                 .padding(.vertical, 12)
             }
             .scrollDismissesKeyboard(.interactively)
-            .onChange(of: viewModel.messages.count) {
-                scrollToBottom(proxy: proxy)
-            }
-            .onChange(of: viewModel.streamingContent) {
-                scrollToBottom(proxy: proxy)
-            }
+            .onChange(of: viewModel.messages.count) { scrollToBottom(proxy: proxy) }
+            .onChange(of: viewModel.streamingContent) { scrollToBottom(proxy: proxy) }
         }
     }
+
+    // MARK: - Memory indicator
+
+    @ViewBuilder
+    private var memoryIndicator: some View {
+        if viewModel.injectedMemoryCount > 0 && !viewModel.isStreaming {
+            EmptyView()
+        } else if viewModel.isStreaming && viewModel.injectedMemoryCount > 0 {
+            HStack(spacing: 4) {
+                Image(systemName: "brain.head.profile")
+                    .font(.caption2)
+                Text("\(viewModel.injectedMemoryCount) memor\(viewModel.injectedMemoryCount == 1 ? "y" : "ies") recalled")
+                    .font(.caption2)
+            }
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 4)
+            .background(.ultraThinMaterial, in: Capsule())
+            .padding(.bottom, 4)
+            .transition(.opacity.combined(with: .scale))
+        }
+    }
+
+    // MARK: - Subviews
 
     private var streamingBubble: some View {
         MessageBubbleView(

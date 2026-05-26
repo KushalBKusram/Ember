@@ -3,6 +3,7 @@ import SwiftUI
 struct SettingsView: View {
     @AppStorage("customSystemPrompt") private var customSystemPrompt = ""
     @AppStorage("responseStyle") private var responseStyle = ResponseStyle.balanced
+    @AppStorage("memoryEnabled") private var memoryEnabled = true
     @State private var showingSystemPromptEditor = false
 
     var body: some View {
@@ -36,6 +37,16 @@ struct SettingsView: View {
                     Text("Personality")
                 } footer: {
                     Text("Custom instructions added to every conversation.")
+                }
+
+                Section {
+                    Toggle(isOn: $memoryEnabled) {
+                        Label("Memory Learning", systemImage: "brain.head.profile")
+                    }
+                } header: {
+                    Text("Memory")
+                } footer: {
+                    Text("When enabled, Ember learns facts about you from conversations and uses them to personalise future responses. All memory stays on-device.")
                 }
 
                 Section("Privacy") {

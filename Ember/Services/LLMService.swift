@@ -13,19 +13,20 @@ actor LLMService {
     func streamResponse(
         to userMessage: String,
         history: [Message],
+        memories: [Memory] = [],
         systemPrompt: String? = nil
     ) -> AsyncThrowingStream<String, Error> {
         let instructions = buildInstructions(
             base: systemPrompt ?? defaultSystemPrompt,
-            history: history
+            history: history,
+            memories: memories
         )
-        let prompt = userMessage
 
         return AsyncThrowingStream { continuation in
             Task {
                 do {
                     let session = LanguageModelSession(instructions: instructions)
-                    let stream = session.streamResponse(to: prompt)
+                    let stream = session.streamResponse(to: userMessage)
                     for try await partial in stream {
                         continuation.yield(partial.content)
                     }
@@ -39,31 +40,44 @@ actor LLMService {
 
     // MARK: - Private
 
-    private func buildInstructions(base: String, history: [Message]) -> String {
-        guard !history.isEmpty else { return base }
+    private func buildInstructions(base: String, history: [Message], memories: [Memory]) -> String {
+        var sections = [base]
 
-        let recentHistory = history.suffix(20)
-        let transcript = recentHistory.map { msg in
-            let speaker = msg.role == .user ? "User" : "Ember"
-            return "\(speaker): \(msg.content)"
-        }.joined(separator: "\n\n")
+        if !memories.isEmpty {
+            let memBlock = memories
+                .filter { $0.isEnabled }
+                .map { "[\($0.category.rawValue)] \($0.content)" }
+                .joined(separator: "\n")
+            if !memBlock.isEmpty {
+                sections.append("""
 
-        return """
-            \(base)
+                    --- What Ember remembers about you (use naturally, don't announce) ---
+                    \(memBlock)
+                    --- End of memories ---
+                    """)
+            }
+        }
 
-            --- Previous conversation context (do not repeat or acknowledge this block) ---
-            \(transcript)
-            --- End of context ---
-            """
+        if !history.isEmpty {
+            let transcript = history.suffix(20).map { msg in
+                "\(msg.role == .user ? "User" : "Ember"): \(msg.content)"
+            }.joined(separator: "\n\n")
+            sections.append("""
+
+                --- Previous conversation context (do not repeat or acknowledge this block) ---
+                \(transcript)
+                --- End of context ---
+                """)
+        }
+
+        return sections.joined(separator: "\n")
     }
 }
 
 // MARK: - Model availability
 
 extension LLMService {
-    nonisolated func isAvailable() async -> Bool {
-        // SystemLanguageModel.default.isAvailable may be the correct API
-        // Verify against final Foundation Models docs on device
-        return SystemLanguageModel.default.isAvailable
+    nonisolated var isModelAvailable: Bool {
+        SystemLanguageModel.default.isAvailable
     }
 }
