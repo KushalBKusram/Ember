@@ -4,6 +4,7 @@ struct SettingsView: View {
     @AppStorage("customSystemPrompt") private var customSystemPrompt = ""
     @AppStorage("responseStyle") private var responseStyle = ResponseStyle.balanced
     @AppStorage("memoryEnabled") private var memoryEnabled = true
+    @AppStorage("appLockEnabled") private var appLockEnabled = true
     @State private var showingSystemPromptEditor = false
 
     var body: some View {
@@ -59,6 +60,16 @@ struct SettingsView: View {
                     Text("RAG")
                 } footer: {
                     Text("Connect your calendar, reminders, and documents so Ember can answer questions using your personal data.")
+                }
+
+                Section {
+                    Toggle(isOn: $appLockEnabled) {
+                        Label("Face ID Lock", systemImage: "faceid")
+                    }
+                } header: {
+                    Text("Security")
+                } footer: {
+                    Text("Lock Ember with Face ID whenever you leave the app.")
                 }
 
                 Section("Privacy") {

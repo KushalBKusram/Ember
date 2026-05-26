@@ -25,4 +25,9 @@ enum AppSettings {
         get { UserDefaults.standard.string(forKey: "userProfile") ?? "" }
         set { UserDefaults.standard.set(newValue, forKey: "userProfile") }
     }
+
+    static var appLockEnabled: Bool {
+        get { UserDefaults.standard.object(forKey: "appLockEnabled") as? Bool ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: "appLockEnabled") }
+    }
 }

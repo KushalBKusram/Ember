@@ -7,6 +7,7 @@ actor RAGService {
     private let db = AppDatabase.shared
     private let embedder = EmbeddingService.shared
     private let calendar = CalendarService.shared
+    private let webFetcher = WebFetchService.shared
 
     // MARK: - Indexing
 
@@ -40,7 +41,7 @@ actor RAGService {
 
     // MARK: - Retrieval
 
-    func retrieve(for query: String, limit: Int = 5) async throws -> [RAGResult] {
+    func retrieve(for query: String, webURLs: [URL] = [], limit: Int = 5) async throws -> [RAGResult] {
         guard let queryVec = await embedder.embed(query) else { return [] }
 
         var candidates: [(content: String, embedding: [Float], title: String, icon: String)] = []
@@ -68,6 +69,19 @@ actor RAGService {
             for reminder in reminders {
                 if let vec = await embedder.embed(reminder) {
                     candidates.append((reminder, vec, "Reminders", "checklist"))
+                }
+            }
+        }
+
+        // Web content (fetched live for this message)
+        for url in webURLs {
+            if let text = try? await webFetcher.fetchText(from: url) {
+                let chunks = makeChunks(from: text)
+                for chunk in chunks {
+                    if let vec = await embedder.embed(chunk) {
+                        let host = url.host ?? "Web"
+                        candidates.append((chunk, vec, host, "globe"))
+                    }
                 }
             }
         }

@@ -6,6 +6,7 @@ struct InputBarView: View {
     let isStreaming: Bool
     let onSend: () -> Void
     let onCancel: () -> Void
+    var onGenerateImage: (() -> Void)? = nil
 
     @StateObject private var speech = SpeechService.shared
     @FocusState private var focused: Bool
@@ -16,6 +17,10 @@ struct InputBarView: View {
     var body: some View {
         HStack(alignment: .bottom, spacing: 8) {
             voiceButton
+
+            if let onGenerateImage {
+                imageButton(action: onGenerateImage)
+            }
 
             textField
 
@@ -45,6 +50,17 @@ struct InputBarView: View {
                 if canSend { sendAndClear() }
             }
             .padding(.vertical, 4)
+    }
+
+    private func imageButton(action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: "wand.and.sparkles")
+                .font(.system(size: 18, weight: .medium))
+                .foregroundStyle(.secondary)
+                .frame(width: 32, height: 32)
+        }
+        .buttonStyle(.plain)
+        .disabled(isStreaming)
     }
 
     private var voiceButton: some View {

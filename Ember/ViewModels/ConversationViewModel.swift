@@ -57,7 +57,66 @@ final class ConversationViewModel {
         streamingContent = ""
     }
 
-    // MARK: - Private
+    // MARK: - Image messages
+
+    func saveGeneratedImage(from sourceURL: URL) {
+        Task {
+            do {
+                let filename = "\(UUID().uuidString).jpg"
+                let dest = Self.imagesDirectory.appendingPathComponent(filename)
+                try FileManager.default.copyItem(at: sourceURL, to: dest)
+
+                var msg = Message(
+                    conversationId: conversation.id,
+                    role: .assistant,
+                    content: "",
+                    attachmentPath: filename
+                )
+                try db.save(&msg)
+                try db.touchConversation(id: conversation.id)
+            } catch {
+                self.error = "Could not save generated image."
+            }
+        }
+    }
+
+    static var imagesDirectory: URL {
+        let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("GeneratedImages")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }
+
+    // MARK: - Regenerate & Edit
+
+    func regenerate(_ message: Message) {
+        guard !isStreaming else { return }
+        guard let idx = messages.firstIndex(where: { $0.id == message.id }),
+              let userMsg = messages[..<idx].last(where: { $0.role == .user }) else { return }
+
+        // Delete the assistant message and everything after
+        for msg in messages[idx...] { try? db.deleteMessage(msg) }
+
+        streamingTask?.cancel()
+        streamingTask = Task { await performSendText(userMsg.content) }
+    }
+
+    func submitEdit(message: Message, newContent: String) {
+        guard !isStreaming,
+              let idx = messages.firstIndex(where: { $0.id == message.id }) else { return }
+
+        var updated = message
+        updated.content = newContent
+        try? db.save(&updated)
+
+        // Delete everything after the edited message
+        for msg in messages[(idx + 1)...] { try? db.deleteMessage(msg) }
+
+        streamingTask?.cancel()
+        streamingTask = Task { await performSendText(newContent) }
+    }
+
+    // MARK: - Private send
 
     private func performSend(_ text: String) async {
         error = nil
@@ -73,26 +132,33 @@ final class ConversationViewModel {
             return
         }
 
-        // Inject synthesised user profile (no per-message retrieval needed)
+        await performSendText(text)
+    }
+
+    // Sends text to the LLM without saving a new user message (used by regen/edit)
+    private func performSendText(_ text: String) async {
+        // Profile injection
         var userProfile = ""
         if AppSettings.memoryEnabled && !isIncognito {
             userProfile = AppSettings.userProfile
-            injectedMemoryCount = userProfile.isEmpty
-                ? 0
-                : ((try? AppDatabase.shared.activeMemories().count) ?? 0)
+            if !userProfile.isEmpty {
+                injectedMemoryCount = (try? db.activeMemories().count) ?? 0
+            }
         }
 
-        // Retrieve RAG context
+        // Detect URLs in message and retrieve RAG (file + calendar + web)
+        let webURLs = WebFetchService.shared.detectURLs(in: text)
         var ragContext: [RAGResult] = []
         if !isIncognito {
-            ragContext = (try? await RAGService.shared.retrieve(for: text)) ?? []
+            ragContext = (try? await RAGService.shared.retrieve(for: text, webURLs: webURLs)) ?? []
             ragSources = ragContext
         }
 
         isStreaming = true
         streamingContent = ""
 
-        let history = messages.filter { $0.id != userMsg.id }
+        let history = messages.filter { $0.role == .user || $0.role == .assistant }
+            .filter { $0.attachmentPath == nil }
 
         do {
             let stream = await llm.streamResponse(
@@ -114,7 +180,7 @@ final class ConversationViewModel {
         if !Task.isCancelled, !streamingContent.isEmpty {
             finalizeStream()
             if !isIncognito {
-                triggerMemoryExtraction(userMessage: userMsg)
+                triggerMemoryExtraction()
             }
         }
 
@@ -137,7 +203,7 @@ final class ConversationViewModel {
         }
     }
 
-    private func triggerMemoryExtraction(userMessage: Message) {
+    private func triggerMemoryExtraction() {
         let conversationId = conversation.id
         Task.detached(priority: .background) {
             let db = AppDatabase.shared

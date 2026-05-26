@@ -87,6 +87,12 @@ final class AppDatabase: Sendable {
             try db.create(indexOn: "rag_chunk", columns: ["documentId", "chunkIndex"])
         }
 
+        migrator.registerMigration("v4_image_messages") { db in
+            try db.alter(table: "message") { t in
+                t.add(column: "attachmentPath", .text)
+            }
+        }
+
         try migrator.migrate(dbPool)
     }
 }
@@ -147,6 +153,21 @@ extension AppDatabase {
     func save(_ message: inout Message) throws {
         try dbPool.write { db in
             try message.save(db)
+        }
+    }
+
+    func deleteMessage(_ message: Message) throws {
+        try dbPool.write { db in
+            _ = try message.delete(db)
+        }
+    }
+
+    func deleteMessages(after date: Date, in conversationId: UUID) throws {
+        try dbPool.write { db in
+            try Message
+                .filter(Column("conversationId") == conversationId)
+                .filter(Column("createdAt") >= date)
+                .deleteAll(db)
         }
     }
 
