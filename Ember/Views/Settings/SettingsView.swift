@@ -1,11 +1,9 @@
 import SwiftUI
 
 struct SettingsView: View {
-    @AppStorage("customSystemPrompt") private var customSystemPrompt = ""
-    @AppStorage("responseStyle") private var responseStyle = ResponseStyle.balanced
-    @AppStorage("memoryEnabled") private var memoryEnabled = true
-    @AppStorage("appLockEnabled") private var appLockEnabled = true
-    @State private var showingSystemPromptEditor = false
+    @AppStorage("memoryEnabled")     private var memoryEnabled     = true
+    @AppStorage("appLockEnabled")    private var appLockEnabled    = true
+    @AppStorage("webSearchEnabled")  private var webSearchEnabled  = false
 
     var body: some View {
         NavigationStack {
@@ -13,31 +11,6 @@ struct SettingsView: View {
                 Section("Model") {
                     LabeledContent("Engine", value: "Apple Foundation Models")
                     LabeledContent("Processing", value: "On-device · Private")
-                }
-
-                Section("Response Style") {
-                    Picker("Style", selection: $responseStyle) {
-                        ForEach(ResponseStyle.allCases) { style in
-                            Text(style.label).tag(style)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                }
-
-                Section {
-                    Button("Edit System Prompt") {
-                        showingSystemPromptEditor = true
-                    }
-                    if !customSystemPrompt.isEmpty {
-                        Text(customSystemPrompt)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(2)
-                    }
-                } header: {
-                    Text("Personality")
-                } footer: {
-                    Text("Custom instructions added to every conversation.")
                 }
 
                 Section {
@@ -63,6 +36,16 @@ struct SettingsView: View {
                 }
 
                 Section {
+                    Toggle(isOn: $webSearchEnabled) {
+                        Label("Web Search", systemImage: "magnifyingglass.circle")
+                    }
+                } header: {
+                    Text("Internet")
+                } footer: {
+                    Text("When enabled, Ember searches DuckDuckGo to answer questions about current events or general knowledge. Your query is sent to DuckDuckGo — disable to keep all activity fully on-device.")
+                }
+
+                Section {
                     Toggle(isOn: $appLockEnabled) {
                         Label("Face ID Lock", systemImage: "faceid")
                     }
@@ -79,49 +62,11 @@ struct SettingsView: View {
                 }
 
                 Section("About") {
-                    LabeledContent("Version", value: "1.0.0 (Milestone 1)")
+                    LabeledContent("Version", value: "\(AppSettings.currentVersion) (v1 candidate)")
                     Link("Source & License", destination: URL(string: "https://github.com")!)
                 }
             }
             .navigationTitle("Settings")
-            .sheet(isPresented: $showingSystemPromptEditor) {
-                SystemPromptEditorView(prompt: $customSystemPrompt)
-            }
         }
-    }
-}
-
-// MARK: - Response Style
-
-enum ResponseStyle: String, CaseIterable, Identifiable {
-    case concise, balanced, detailed
-
-    var id: String { rawValue }
-    var label: String { rawValue.capitalized }
-}
-
-// MARK: - System Prompt Editor
-
-struct SystemPromptEditorView: View {
-    @Binding var prompt: String
-    @Environment(\.dismiss) private var dismiss
-
-    var body: some View {
-        NavigationStack {
-            TextEditor(text: $prompt)
-                .padding()
-                .navigationTitle("System Prompt")
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .confirmationAction) {
-                        Button("Done") { dismiss() }
-                    }
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("Clear") { prompt = "" }
-                    }
-                }
-        }
-        .presentationDetents([.medium, .large])
-        .presentationBackground(.regularMaterial)
     }
 }

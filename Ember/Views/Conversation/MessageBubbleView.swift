@@ -52,9 +52,8 @@ struct MessageBubbleView: View {
     }
 
     private var textContent: some View {
-        MarkdownText(text: message.content)
+        MarkdownText(text: message.content, foreground: isUser ? .white : .primary)
             .font(.body)
-            .foregroundStyle(isUser ? .white : .primary)
             .padding(.horizontal, 14)
             .padding(.vertical, 10)
             .background {
@@ -62,8 +61,8 @@ struct MessageBubbleView: View {
                     RoundedRectangle(cornerRadius: 20, style: .continuous)
                         .fill(Color.accentColor)
                 } else {
-                    RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .fill(.ultraThinMaterial)
+                    Color.clear
+                        .glassEffect(in: RoundedRectangle(cornerRadius: 20, style: .continuous))
                 }
             }
             .overlay {

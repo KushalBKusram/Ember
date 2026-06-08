@@ -6,7 +6,6 @@ actor RAGService {
 
     private let db = AppDatabase.shared
     private let embedder = EmbeddingService.shared
-    private let calendar = CalendarService.shared
     private let webFetcher = WebFetchService.shared
 
     // MARK: - Indexing
@@ -39,6 +38,48 @@ actor RAGService {
         try db.deleteRAGDocument(document)
     }
 
+    // MARK: - Notes (user-authored short text)
+
+    /// Index a free-form note. Uses the same chunking + embedding path as files,
+    /// but stores the original text as the first chunk's content so we can later
+    /// load it back into an editor for revision (rather than only delete+recreate).
+    @discardableResult
+    func indexNote(title: String, body: String, replacing existing: RAGDocument? = nil) async throws -> RAGDocument {
+        let cleanTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanBody = body.trimmingCharacters(in: .whitespacesAndNewlines)
+        let finalTitle = cleanTitle.isEmpty ? "Untitled Note" : cleanTitle
+
+        var doc: RAGDocument
+        if let existing {
+            doc = existing
+            doc.title = finalTitle
+            doc.indexedAt = Date()
+            try db.saveRAGDocument(&doc)
+            try db.deleteRAGChunks(for: doc.id)
+        } else {
+            doc = RAGDocument(title: finalTitle, source: .note, sourceIdentifier: nil)
+            try db.saveRAGDocument(&doc)
+        }
+
+        let chunks = makeChunks(from: cleanBody)
+        for (i, chunkText) in chunks.enumerated() {
+            var ragChunk = RAGChunk(documentId: doc.id, content: chunkText, chunkIndex: i)
+            if let vec = await embedder.embed(chunkText) {
+                ragChunk.embedding = vec.asData
+            }
+            try db.saveRAGChunk(&ragChunk)
+        }
+
+        doc.chunkCount = chunks.count
+        try db.saveRAGDocument(&doc)
+        return doc
+    }
+
+    /// Reconstruct the original note text by concatenating chunk contents.
+    func noteBody(for documentId: UUID) throws -> String {
+        try db.ragChunks(for: documentId).map(\.content).joined(separator: " ")
+    }
+
     // MARK: - Retrieval
 
     func retrieve(for query: String, webURLs: [URL] = [], limit: Int = 5) async throws -> [RAGResult] {
@@ -53,35 +94,30 @@ actor RAGService {
             candidates.append((chunk.content, vec, doc.title, doc.source.icon))
         }
 
-        // Live calendar events
-        if AppSettings.calendarEnabled {
-            let events = await calendar.fetchEvents()
-            for event in events {
-                if let vec = await embedder.embed(event) {
-                    candidates.append((event, vec, "Calendar", "calendar"))
+        // Calendar events and reminders are injected via a dedicated structured block
+        // in LLMService (date-window-aware, chronologically sorted) rather than
+        // flowing through MMR. Mixing time-series calendar data with semantic
+        // document chunks produced unordered, irrelevant event selection.
+
+        // Web content — fetch all URLs in parallel; chunk + embed each result
+        // serially since embedding is CPU-bound and isolated to the actor.
+        let fetched = await withTaskGroup(of: (URL, String?).self) { group in
+            for url in webURLs {
+                group.addTask { [webFetcher] in
+                    (url, try? await webFetcher.fetchText(from: url))
                 }
             }
-        }
-
-        // Live reminders
-        if AppSettings.remindersEnabled {
-            let reminders = await calendar.fetchReminders()
-            for reminder in reminders {
-                if let vec = await embedder.embed(reminder) {
-                    candidates.append((reminder, vec, "Reminders", "checklist"))
-                }
+            var results: [(URL, String)] = []
+            for await (url, text) in group {
+                if let text { results.append((url, text)) }
             }
+            return results
         }
-
-        // Web content (fetched live for this message)
-        for url in webURLs {
-            if let text = try? await webFetcher.fetchText(from: url) {
-                let chunks = makeChunks(from: text)
-                for chunk in chunks {
-                    if let vec = await embedder.embed(chunk) {
-                        let host = url.host ?? "Web"
-                        candidates.append((chunk, vec, host, "globe"))
-                    }
+        for (url, text) in fetched {
+            let host = url.host ?? "Web"
+            for chunk in makeChunks(from: text) {
+                if let vec = await embedder.embed(chunk) {
+                    candidates.append((chunk, vec, host, "globe"))
                 }
             }
         }

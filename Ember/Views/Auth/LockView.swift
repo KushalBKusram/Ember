@@ -3,7 +3,9 @@ import LocalAuthentication
 
 struct LockView: View {
     @Binding var isUnlocked: Bool
+    @Environment(\.scenePhase) private var scenePhase
     @State private var failed = false
+    @State private var authenticating = false
 
     var body: some View {
         ZStack {
@@ -35,6 +37,7 @@ struct LockView: View {
                             .foregroundStyle(.white)
                     }
                     .padding(.horizontal, 40)
+                    .disabled(authenticating)
 
                     if failed {
                         Text("Authentication failed. Try again.")
@@ -46,9 +49,18 @@ struct LockView: View {
             }
         }
         .task { authenticate() }
+        .onChange(of: scenePhase) { _, phase in
+            // Retry automatically whenever the app comes back to active —
+            // covers the "user cancelled Face ID, then re-engaged the app"
+            // case without needing another tap.
+            if phase == .active && !authenticating { authenticate() }
+        }
     }
 
     private func authenticate() {
+        guard !authenticating else { return }
+        authenticating = true
+
         let context = LAContext()
         var error: NSError?
 
@@ -60,10 +72,13 @@ struct LockView: View {
                 DispatchQueue.main.async {
                     isUnlocked = success
                     failed = !success
+                    authenticating = false
+                    if success { Haptics.success() } else { Haptics.warning() }
                 }
             }
         } else {
             isUnlocked = true
+            authenticating = false
         }
     }
 }

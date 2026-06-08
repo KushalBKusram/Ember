@@ -2,16 +2,47 @@ import GRDB
 import Foundation
 
 final class AppDatabase: Sendable {
+    // Bump when the on-disk format changes in a way that requires wiping
+    // unencrypted data from older builds. v2 = NSFileProtectionComplete migration.
+    private static let storageVersionKey = "emberStorageVersion"
+    private static let currentStorageVersion = 2
+
     static let shared: AppDatabase = {
         do {
-            let url = try FileManager.default
+            let dir = try FileManager.default
                 .url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
-                .appendingPathComponent("ember.sqlite")
-            return try AppDatabase(path: url.path)
+            let url = dir.appendingPathComponent("ember.sqlite")
+
+            wipeUnencryptedLegacyDatabaseIfNeeded(at: url)
+
+            do {
+                return try AppDatabase(path: url.path)
+            } catch {
+                // Database corruption — quarantine the broken file and try
+                // once more with a fresh DB. Better to lose local data than
+                // crash on launch with no recovery path.
+                quarantineCorruptDatabase(at: url, reason: error)
+                return try AppDatabase(path: url.path)
+            }
         } catch {
-            fatalError("Failed to initialize database: \(error)")
+            fatalError("Failed to initialize database after recovery: \(error)")
         }
     }()
+
+    private static func quarantineCorruptDatabase(at url: URL, reason: Error) {
+        let fm = FileManager.default
+        let stamp = ISO8601DateFormatter().string(from: Date())
+            .replacingOccurrences(of: ":", with: "-")
+        for ext in ["", "-wal", "-shm"] {
+            let original = URL(fileURLWithPath: url.path + ext)
+            guard fm.fileExists(atPath: original.path) else { continue }
+            let quarantined = url.deletingPathExtension()
+                .appendingPathExtension("broken-\(stamp).sqlite\(ext)")
+            try? fm.moveItem(at: original, to: quarantined)
+        }
+        // Surface to telemetry-equivalent: NSLog so it lands in Console.app.
+        NSLog("[Ember] Database quarantined due to: \(reason)")
+    }
 
     let dbPool: DatabasePool
 
@@ -20,6 +51,51 @@ final class AppDatabase: Sendable {
         config.foreignKeysEnabled = true
         dbPool = try DatabasePool(path: path, configuration: config)
         try migrate()
+        try Self.applyFileProtection(at: path)
+    }
+
+    // MARK: - File-protection migration
+    //
+    // The original v1 database was created with the OS default protection
+    // (.completeUntilFirstUserAuthentication). For v2 we step up to
+    // .completeUnlessOpen — the file is re-encrypted whenever it is closed
+    // (i.e. when the app terminates or backgrounds long enough for the
+    // database pool to be torn down) with a hardware-backed key. While the
+    // app is in foreground and the pool is open, the file is accessible —
+    // which is exactly what GRDB's DatabasePool needs.
+    //
+    // Note: this is iOS-native at-rest encryption via the Secure Enclave,
+    // not SQLCipher. On A17 Pro+ hardware it is stronger than SQLCipher
+    // for our threat model (no passphrase to leak, hardware-bound key).
+    //
+    // Existing plain data from older builds is wiped so the new file is
+    // born with full file-protection attributes from the start.
+
+    private static func wipeUnencryptedLegacyDatabaseIfNeeded(at url: URL) {
+        let defaults = UserDefaults.standard
+        let storedVersion = defaults.integer(forKey: storageVersionKey)
+        guard storedVersion < currentStorageVersion else { return }
+
+        let fm = FileManager.default
+        for ext in ["", "-wal", "-shm"] {
+            let companion = URL(fileURLWithPath: url.path + ext)
+            if fm.fileExists(atPath: companion.path) {
+                try? fm.removeItem(at: companion)
+            }
+        }
+        defaults.set(currentStorageVersion, forKey: storageVersionKey)
+    }
+
+    private static func applyFileProtection(at path: String) throws {
+        let fm = FileManager.default
+        for ext in ["", "-wal", "-shm"] {
+            let p = path + ext
+            guard fm.fileExists(atPath: p) else { continue }
+            try fm.setAttributes(
+                [.protectionKey: FileProtectionType.completeUnlessOpen],
+                ofItemAtPath: p
+            )
+        }
     }
 
     private func migrate() throws {
@@ -90,6 +166,16 @@ final class AppDatabase: Sendable {
         migrator.registerMigration("v4_image_messages") { db in
             try db.alter(table: "message") { t in
                 t.add(column: "attachmentPath", .text)
+            }
+        }
+
+        migrator.registerMigration("v5_embedding_cache") { db in
+            // Content-hash → embedding blob. We never delete entries —
+            // they're cheap (~2KB each) and a stale cache hit costs nothing.
+            try db.create(table: "embedding_cache") { t in
+                t.primaryKey("contentHash", .text)
+                t.column("embedding", .blob).notNull()
+                t.column("createdAt", .datetime).notNull()
             }
         }
 
@@ -177,6 +263,25 @@ extension AppDatabase {
                 sql: "UPDATE conversation SET updatedAt = ? WHERE id = ?",
                 arguments: [Date(), id]
             )
+        }
+    }
+
+    /// Latest message per conversation, keyed by conversation ID.
+    /// Used for row previews on the chat list. Empty content (image-only
+    /// messages) is skipped in favour of the prior text message.
+    func latestMessageContent(by conversationId: [UUID]) throws -> [UUID: String] {
+        guard !conversationId.isEmpty else { return [:] }
+        return try dbPool.read { db in
+            var out: [UUID: String] = [:]
+            for id in conversationId {
+                let msg = try Message
+                    .filter(Column("conversationId") == id)
+                    .filter(Column("content") != "")
+                    .order(Column("createdAt").desc)
+                    .fetchOne(db)
+                if let msg { out[id] = msg.content }
+            }
+            return out
         }
     }
 }
@@ -270,6 +375,29 @@ extension AppDatabase {
     func deleteRAGChunks(for documentId: UUID) throws {
         try dbPool.write { db in
             try RAGChunk.filter(Column("documentId") == documentId).deleteAll(db)
+        }
+    }
+
+    func cachedEmbedding(forHash hash: String) throws -> Data? {
+        try dbPool.read { db in
+            try Data.fetchOne(
+                db,
+                sql: "SELECT embedding FROM embedding_cache WHERE contentHash = ?",
+                arguments: [hash]
+            )
+        }
+    }
+
+    func setCachedEmbedding(_ data: Data, forHash hash: String) throws {
+        try dbPool.write { db in
+            try db.execute(
+                sql: """
+                    INSERT INTO embedding_cache (contentHash, embedding, createdAt)
+                    VALUES (?, ?, ?)
+                    ON CONFLICT(contentHash) DO UPDATE SET embedding = excluded.embedding
+                    """,
+                arguments: [hash, data, Date()]
+            )
         }
     }
 

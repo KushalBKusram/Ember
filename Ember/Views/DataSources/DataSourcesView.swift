@@ -4,6 +4,7 @@ import UniformTypeIdentifiers
 struct DataSourcesView: View {
     @State private var viewModel = DataSourcesViewModel()
     @State private var showFilePicker = false
+    @State private var editingNote: NoteEdit?
     @AppStorage("calendarEnabled") private var calendarEnabled = false
     @AppStorage("remindersEnabled") private var remindersEnabled = false
 
@@ -30,7 +31,7 @@ struct DataSourcesView: View {
 
             Section {
                 if viewModel.documents.isEmpty && !viewModel.isIndexing {
-                    Text("No files imported yet.")
+                    Text("No documents yet. Add a note or import a file from the + menu.")
                         .foregroundStyle(.secondary)
                 }
 
@@ -46,25 +47,50 @@ struct DataSourcesView: View {
                 ForEach(viewModel.documents) { doc in
                     HStack {
                         Label(doc.title, systemImage: doc.source.icon)
+                            .foregroundStyle(doc.isEnabled ? .primary : .secondary)
                         Spacer()
                         Text("\(doc.chunkCount) chunks")
                             .font(.caption)
                             .foregroundStyle(.tertiary)
                     }
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        if doc.source == .note { openNote(doc) }
+                    }
+                    .swipeActions(edge: .leading, allowsFullSwipe: false) {
+                        Button {
+                            viewModel.toggleDocument(doc)
+                        } label: {
+                            Label(
+                                doc.isEnabled ? "Disable" : "Enable",
+                                systemImage: doc.isEnabled ? "pause.circle" : "play.circle"
+                            )
+                        }
+                        .tint(doc.isEnabled ? .orange : .green)
+                    }
                 }
                 .onDelete { viewModel.deleteDocuments(at: $0) }
 
             } header: {
-                Text("Imported Files")
+                Text("Documents")
             } footer: {
-                Text("PDF, text, and markdown files are chunked and embedded on-device.")
+                Text("PDFs and text files are chunked and embedded on-device. Notes you write here are stored privately and indexed the same way.")
             }
         }
         .navigationTitle("Knowledge Sources")
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
-                Button {
-                    showFilePicker = true
+                Menu {
+                    Button {
+                        editingNote = NoteEdit()
+                    } label: {
+                        Label("New Note", systemImage: "note.text")
+                    }
+                    Button {
+                        showFilePicker = true
+                    } label: {
+                        Label("Import File", systemImage: "doc")
+                    }
                 } label: {
                     Image(systemName: "plus")
                 }
@@ -85,6 +111,9 @@ struct DataSourcesView: View {
                 viewModel.error = error.localizedDescription
             }
         }
+        .sheet(item: $editingNote) { note in
+            noteEditor(note)
+        }
         .alert("Error", isPresented: .constant(viewModel.error != nil), actions: {
             Button("OK") { viewModel.error = nil }
         }, message: {
@@ -94,4 +123,91 @@ struct DataSourcesView: View {
         .onDisappear { viewModel.stopObserving() }
     }
 
+    // MARK: - Note editor
+
+    @ViewBuilder
+    private func noteEditor(_ note: NoteEdit) -> some View {
+        NoteEditorView(initial: note) { title, body in
+            viewModel.saveNote(title: title, body: body, replacing: note.existing)
+            editingNote = nil
+        } onCancel: {
+            editingNote = nil
+        }
+    }
+
+    private func openNote(_ doc: RAGDocument) {
+        Task {
+            let body = await viewModel.loadNoteBody(for: doc)
+            editingNote = NoteEdit(existing: doc, title: doc.title, body: body)
+        }
+    }
+}
+
+// MARK: - Note edit model
+
+struct NoteEdit: Identifiable {
+    let id = UUID()
+    var existing: RAGDocument?
+    var title: String = ""
+    var body: String = ""
+}
+
+// MARK: - Editor view
+
+private struct NoteEditorView: View {
+    let initial: NoteEdit
+    let onSave: (String, String) -> Void
+    let onCancel: () -> Void
+
+    @State private var title: String
+    @State private var bodyText: String
+    @FocusState private var bodyFocused: Bool
+
+    init(initial: NoteEdit, onSave: @escaping (String, String) -> Void, onCancel: @escaping () -> Void) {
+        self.initial = initial
+        self.onSave = onSave
+        self.onCancel = onCancel
+        _title = State(initialValue: initial.title)
+        _bodyText = State(initialValue: initial.body)
+    }
+
+    var canSave: Bool {
+        !bodyText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    TextField("Title", text: $title)
+                }
+                Section {
+                    TextEditor(text: $bodyText)
+                        .frame(minHeight: 240)
+                        .focused($bodyFocused)
+                } header: {
+                    Text("Body")
+                } footer: {
+                    Text("This note is indexed for RAG and surfaced when relevant to a question.")
+                }
+            }
+            .navigationTitle(initial.existing == nil ? "New Note" : "Edit Note")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        Haptics.success()
+                        onSave(title, bodyText)
+                    }
+                    .disabled(!canSave)
+                }
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel", action: onCancel)
+                }
+            }
+            .onAppear {
+                if initial.existing == nil { bodyFocused = true }
+            }
+        }
+    }
 }

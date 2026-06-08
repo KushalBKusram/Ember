@@ -22,6 +22,10 @@ final class SpeechService: NSObject, ObservableObject {
     }
 
     func requestAuthorization() async {
+        // Microphone first — speech recognition needs an audio session, and
+        // setActive(.record) silently throws if mic was denied.
+        _ = await AVAudioApplication.requestRecordPermission()
+
         let status = await withCheckedContinuation { continuation in
             SFSpeechRecognizer.requestAuthorization { status in
                 continuation.resume(returning: status)

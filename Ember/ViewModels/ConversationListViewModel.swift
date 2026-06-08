@@ -5,6 +5,7 @@ import GRDB
 @Observable
 final class ConversationListViewModel {
     var conversations: [Conversation] = []
+    var lastMessagePreview: [UUID: String] = [:]
     var searchQuery = ""
     var isLoading = false
 
@@ -15,6 +16,7 @@ final class ConversationListViewModel {
         guard !searchQuery.isEmpty else { return conversations }
         return conversations.filter {
             $0.title.localizedCaseInsensitiveContains(searchQuery)
+                || (lastMessagePreview[$0.id]?.localizedCaseInsensitiveContains(searchQuery) ?? false)
         }
     }
 
@@ -26,6 +28,7 @@ final class ConversationListViewModel {
                 for try await updated in observation.values(in: db.dbPool) {
                     guard !Task.isCancelled else { break }
                     self.conversations = updated
+                    self.refreshPreviews(for: updated)
                 }
             } catch {
                 // Observation ended — non-fatal
@@ -47,12 +50,26 @@ final class ConversationListViewModel {
 
     func delete(_ conversation: Conversation) throws {
         try db.delete(conversation)
+        lastMessagePreview.removeValue(forKey: conversation.id)
     }
 
     func rename(_ conversation: Conversation, to title: String) throws {
         var updated = conversation
-        updated.title = title
+        updated.title = title.isEmpty ? "Conversation" : title
         updated.updatedAt = Date()
         try db.save(&updated)
+    }
+
+    func togglePin(_ conversation: Conversation) throws {
+        var updated = conversation
+        updated.isPinned.toggle()
+        try db.save(&updated)
+    }
+
+    private func refreshPreviews(for conversations: [Conversation]) {
+        let ids = conversations.map(\.id)
+        if let previews = try? db.latestMessageContent(by: ids) {
+            lastMessagePreview = previews
+        }
     }
 }

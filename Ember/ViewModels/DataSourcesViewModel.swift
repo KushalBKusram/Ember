@@ -46,6 +46,24 @@ final class DataSourcesViewModel {
         }
     }
 
+    func saveNote(title: String, body: String, replacing existing: RAGDocument? = nil) {
+        isIndexing = true
+        indexingTitle = title.isEmpty ? "Untitled Note" : title
+        Task {
+            do {
+                _ = try await RAGService.shared.indexNote(title: title, body: body, replacing: existing)
+            } catch {
+                self.error = "Could not save note: \(error.localizedDescription)"
+            }
+            isIndexing = false
+            indexingTitle = ""
+        }
+    }
+
+    func loadNoteBody(for doc: RAGDocument) async -> String {
+        (try? await RAGService.shared.noteBody(for: doc.id)) ?? ""
+    }
+
     func deleteDocument(_ doc: RAGDocument) {
         Task {
             try? await RAGService.shared.deleteDocument(doc)
@@ -54,6 +72,12 @@ final class DataSourcesViewModel {
 
     func deleteDocuments(at offsets: IndexSet) {
         offsets.forEach { deleteDocument(documents[$0]) }
+    }
+
+    func toggleDocument(_ doc: RAGDocument) {
+        var updated = doc
+        updated.isEnabled.toggle()
+        try? db.saveRAGDocument(&updated)
     }
 
     func requestCalendarAccess() {

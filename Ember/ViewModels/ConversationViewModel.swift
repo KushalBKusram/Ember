@@ -1,5 +1,9 @@
 import Foundation
 import GRDB
+import OSLog
+
+private let perfLog = OSLog(subsystem: "com.kushal.ember", category: "perf")
+private let perfSignposter = OSSignposter(logHandle: .init(subsystem: "com.kushal.ember", category: "perf"))
 
 @MainActor
 @Observable
@@ -7,16 +11,24 @@ final class ConversationViewModel {
     var messages: [Message] = []
     var streamingContent = ""
     var isStreaming = false
+    var wasCancelled = false
     var error: String?
     var isIncognito = false
     var injectedMemoryCount = 0
     var ragSources: [RAGResult] = []
+    #if DEBUG
+    /// Snapshot of all context injected into the last LLM call.
+    /// Consumed by the debug export button in ConversationView.
+    var lastDebugContext: String = ""
+    #endif
 
-    let conversation: Conversation
+    private(set) var conversation: Conversation
     private let db = AppDatabase.shared
     private let llm = LLMService.shared
     private var observationTask: Task<Void, Never>?
     private var streamingTask: Task<Void, Never>?
+
+    var isModelAvailable: Bool { llm.isModelAvailable }
 
     init(conversation: Conversation) {
         self.conversation = conversation
@@ -52,10 +64,17 @@ final class ConversationViewModel {
     func cancelStreaming() {
         streamingTask?.cancel()
         streamingTask = nil
-        if !streamingContent.isEmpty { finalizeStream() }
+        if !streamingContent.isEmpty {
+            wasCancelled = true
+            finalizeStream()
+        }
         isStreaming = false
         streamingContent = ""
     }
+
+    /// Mark the most recent assistant message as having been cancelled.
+    /// Cleared after the next send.
+    func clearCancelFlag() { wasCancelled = false }
 
     // MARK: - Image messages
 
@@ -120,6 +139,7 @@ final class ConversationViewModel {
 
     private func performSend(_ text: String) async {
         error = nil
+        wasCancelled = false
         injectedMemoryCount = 0
         ragSources = []
 
@@ -137,22 +157,72 @@ final class ConversationViewModel {
 
     // Sends text to the LLM without saving a new user message (used by regen/edit)
     private func performSendText(_ text: String) async {
-        // Profile injection
+        #if DEBUG
+        lastDebugContext = ""
+        #endif
+
+        // First-token latency signpost — open in Instruments → Logging to
+        // verify we stay under the PRD's 500ms target.
+        let sendId = perfSignposter.makeSignpostID()
+        let sendState = perfSignposter.beginInterval("send→firstToken", id: sendId)
+
+        // Profile (narrative summary) + query-specific memory retrieval.
+        // The profile gives the LLM general tone/context; retrieved memories
+        // give precision for questions the 2–4 sentence profile may have compressed away.
         var userProfile = ""
+        var relevantMemoryFacts: [String] = []
         if AppSettings.memoryEnabled && !isIncognito {
             userProfile = AppSettings.userProfile
-            if !userProfile.isEmpty {
-                injectedMemoryCount = (try? db.activeMemories().count) ?? 0
-            }
+            let relevantMemories = await MemoryService.shared.retrieveRelevantIfEnabled(for: text)
+            relevantMemoryFacts = relevantMemories.map { $0.content }
+            injectedMemoryCount = relevantMemories.count
         }
 
-        // Detect URLs in message and retrieve RAG (file + calendar + web)
+        // Detect URLs in message and retrieve RAG (files, notes, web chunks).
+        // Calendar/reminders are fetched separately below — they bypass MMR and
+        // get injected as a dedicated structured schedule block.
         let webURLs = WebFetchService.shared.detectURLs(in: text)
+        let retrieveState = perfSignposter.beginInterval("rag.retrieve", id: sendId)
         var ragContext: [RAGResult] = []
+        var scheduleContext = ""
         if !isIncognito {
-            ragContext = (try? await RAGService.shared.retrieve(for: text, webURLs: webURLs)) ?? []
+            // All three data sources run in parallel.
+            async let ragFetch      = RAGService.shared.retrieve(for: text, webURLs: webURLs)
+            async let scheduleFetch = CalendarService.shared.fetchContext(for: text)
+            async let searchFetch   = WebSearchService.shared.searchIfEnabled(text)
+
+            ragContext      = (try? await ragFetch) ?? []
+            scheduleContext = await scheduleFetch ?? ""
+            let webResults  = await searchFetch
+            ragContext.append(contentsOf: webResults)
             ragSources = ragContext
         }
+        perfSignposter.endInterval("rag.retrieve", retrieveState)
+
+        #if DEBUG
+        do {
+            var _lines: [String] = []
+            if isIncognito {
+                _lines.append("Mode: INCOGNITO (memory & RAG disabled)")
+            } else {
+                _lines.append("Profile: \(userProfile.isEmpty ? "—" : userProfile)")
+                if relevantMemoryFacts.isEmpty {
+                    _lines.append("Memories: none")
+                } else {
+                    _lines.append("Memories (\(relevantMemoryFacts.count) injected):")
+                    relevantMemoryFacts.forEach { _lines.append("  • \($0)") }
+                }
+                _lines.append("Schedule: \(scheduleContext.isEmpty ? "—" : scheduleContext)")
+                if ragContext.isEmpty {
+                    _lines.append("RAG: none")
+                } else {
+                    let sources = ragContext.map { "[\($0.sourceTitle)]" }.joined(separator: " ")
+                    _lines.append("RAG (\(ragContext.count)): \(sources)")
+                }
+            }
+            lastDebugContext = _lines.joined(separator: "\n")
+        }
+        #endif
 
         isStreaming = true
         streamingContent = ""
@@ -160,15 +230,22 @@ final class ConversationViewModel {
         let history = messages.filter { $0.role == .user || $0.role == .assistant }
             .filter { $0.attachmentPath == nil }
 
+        var firstTokenReceived = false
         do {
             let stream = await llm.streamResponse(
                 to: text,
                 history: history,
                 userProfile: userProfile,
-                ragContext: ragContext
+                ragContext: ragContext,
+                scheduleContext: scheduleContext,
+                relevantMemories: relevantMemoryFacts
             )
             for try await chunk in stream {
                 guard !Task.isCancelled else { break }
+                if !firstTokenReceived {
+                    perfSignposter.endInterval("send→firstToken", sendState)
+                    firstTokenReceived = true
+                }
                 streamingContent = chunk
             }
         } catch {
@@ -184,6 +261,11 @@ final class ConversationViewModel {
             }
         }
 
+        // If we cancelled or errored before any tokens arrived, close the signpost.
+        if !firstTokenReceived {
+            perfSignposter.endInterval("send→firstToken", sendState)
+        }
+
         isStreaming = false
     }
 
@@ -197,7 +279,13 @@ final class ConversationViewModel {
         try? db.touchConversation(id: conversation.id)
         streamingContent = ""
 
+        // Auto-title only on the first exchange. We check the live conversation
+        // title (since `self.conversation` is mutated after auto-title) AND the
+        // count of user messages — belt and braces against the observation
+        // potentially being mid-flight.
+        let userMessageCount = messages.filter { $0.role == .user }.count
         if conversation.title == "New Conversation",
+           userMessageCount == 1,
            let firstUser = messages.first(where: { $0.role == .user }) {
             autoTitle(from: firstUser.content)
         }
@@ -223,5 +311,6 @@ final class ConversationViewModel {
         updated.title = words.isEmpty ? "Conversation" : String(words)
         updated.updatedAt = Date()
         try? db.save(&updated)
+        conversation = updated
     }
 }

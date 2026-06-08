@@ -25,6 +25,8 @@ actor WebFetchService {
             "Mozilla/5.0 (iPhone; CPU iPhone OS 26_0 like Mac OS X) AppleWebKit/605.1.15",
             forHTTPHeaderField: "User-Agent"
         )
+        // Marker the DEBUG NetworkGuard uses to whitelist intentional traffic.
+        request.setValue("1", forHTTPHeaderField: "X-Ember-Fetch")
 
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {

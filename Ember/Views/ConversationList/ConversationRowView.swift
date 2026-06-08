@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ConversationRowView: View {
     let conversation: Conversation
+    let preview: String?
 
     var body: some View {
         HStack(spacing: 12) {
@@ -9,12 +10,18 @@ struct ConversationRowView: View {
                 Circle()
                     .fill(Color.accentColor.opacity(0.15))
                     .frame(width: 44, height: 44)
-                Text("🔥")
-                    .font(.title3)
+                Image(systemName: "flame.fill")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(Color.accentColor)
             }
 
             VStack(alignment: .leading, spacing: 3) {
-                HStack {
+                HStack(spacing: 6) {
+                    if conversation.isPinned {
+                        Image(systemName: "pin.fill")
+                            .font(.caption2)
+                            .foregroundStyle(Color.accentColor)
+                    }
                     Text(conversation.title)
                         .font(.body)
                         .fontWeight(.medium)
@@ -27,10 +34,10 @@ struct ConversationRowView: View {
                         .foregroundStyle(.secondary)
                 }
 
-                Text("Tap to continue")
+                Text(preview ?? "Tap to continue")
                     .font(.subheadline)
                     .foregroundStyle(.tertiary)
-                    .lineLimit(1)
+                    .lineLimit(2)
             }
         }
         .padding(.vertical, 4)

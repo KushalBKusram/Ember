@@ -3,8 +3,8 @@ import SwiftUI
 struct ConversationListView: View {
     @State private var viewModel = ConversationListViewModel()
     @State private var selectedConversation: Conversation?
-    @State private var showingNewChat = false
-    @State private var deletionTarget: Conversation?
+    @State private var renameTarget: Conversation?
+    @State private var renameText = ""
 
     var body: some View {
         NavigationStack {
@@ -30,6 +30,9 @@ struct ConversationListView: View {
             .navigationDestination(item: $selectedConversation) { conversation in
                 ConversationView(conversation: conversation)
             }
+            .sheet(item: $renameTarget) { conversation in
+                renameSheet(for: conversation)
+            }
         }
         .onAppear { viewModel.startObserving() }
         .onDisappear { viewModel.stopObserving() }
@@ -40,18 +43,56 @@ struct ConversationListView: View {
     private var conversationList: some View {
         List {
             ForEach(viewModel.filteredConversations) { conversation in
-                ConversationRowView(conversation: conversation)
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        selectedConversation = conversation
+                ConversationRowView(
+                    conversation: conversation,
+                    preview: viewModel.lastMessagePreview[conversation.id]
+                )
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    Haptics.tap()
+                    selectedConversation = conversation
+                }
+                .contextMenu {
+                    Button {
+                        try? viewModel.togglePin(conversation)
+                    } label: {
+                        Label(
+                            conversation.isPinned ? "Unpin" : "Pin",
+                            systemImage: conversation.isPinned ? "pin.slash" : "pin"
+                        )
                     }
-                    .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                        Button(role: .destructive) {
-                            try? viewModel.delete(conversation)
-                        } label: {
-                            Label("Delete", systemImage: "trash")
-                        }
+                    Button {
+                        renameText = conversation.title
+                        renameTarget = conversation
+                    } label: {
+                        Label("Rename", systemImage: "pencil")
                     }
+                    Divider()
+                    Button(role: .destructive) {
+                        try? viewModel.delete(conversation)
+                    } label: {
+                        Label("Delete", systemImage: "trash")
+                    }
+                }
+                .swipeActions(edge: .leading, allowsFullSwipe: false) {
+                    Button {
+                        try? viewModel.togglePin(conversation)
+                    } label: {
+                        Label(
+                            conversation.isPinned ? "Unpin" : "Pin",
+                            systemImage: conversation.isPinned ? "pin.slash" : "pin"
+                        )
+                    }
+                    .tint(.orange)
+                }
+                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                    Button(role: .destructive) {
+                        Haptics.warning()
+                        try? viewModel.delete(conversation)
+                    } label: {
+                        Label("Delete", systemImage: "trash")
+                    }
+                }
             }
         }
         .listStyle(.plain)
@@ -70,10 +111,34 @@ struct ConversationListView: View {
         }
     }
 
+    private func renameSheet(for conversation: Conversation) -> some View {
+        NavigationStack {
+            Form {
+                TextField("Conversation title", text: $renameText)
+                    .submitLabel(.done)
+            }
+            .navigationTitle("Rename")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        try? viewModel.rename(conversation, to: renameText.trimmingCharacters(in: .whitespacesAndNewlines))
+                        renameTarget = nil
+                    }
+                }
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { renameTarget = nil }
+                }
+            }
+        }
+        .presentationDetents([.fraction(0.25)])
+    }
+
     // MARK: - Actions
 
     private func startNewConversation() {
         guard let conversation = try? viewModel.createConversation() else { return }
+        Haptics.tap()
         selectedConversation = conversation
     }
 }

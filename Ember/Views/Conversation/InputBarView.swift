@@ -27,11 +27,7 @@ struct InputBarView: View {
             actionButton
         }
         .padding(10)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .strokeBorder(.separator.opacity(0.5), lineWidth: 0.5)
-        }
+        .glassEffect(in: RoundedRectangle(cornerRadius: 24, style: .continuous))
         .onChange(of: speech.transcribedText) { _, new in
             if !new.isEmpty { text = new }
         }
