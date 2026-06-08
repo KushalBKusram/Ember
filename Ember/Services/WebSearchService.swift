@@ -11,55 +11,110 @@ actor WebSearchService {
 
     // MARK: - Public interface
 
-    /// Returns search results when web search is enabled AND the query has clear
-    /// research intent. Designed for `async let` parallelism — both guards are
-    /// synchronous so the disabled/non-search path is effectively free.
+    /// Conservative gate for general chat — only fires on explicit research signals.
+    /// Designed for `async let` parallelism — both guards are synchronous so the
+    /// disabled/non-search path is effectively free.
     func searchIfEnabled(_ query: String, maxResults: Int = 5) async -> [RAGResult] {
         guard AppSettings.webSearchEnabled else { return [] }
         guard hasSearchIntent(query) else { return [] }
         return await search(query, maxResults: maxResults)
     }
 
+    /// Liberal gate for agent conversations. Strips scheduling language first
+    /// ("every day at 8am" → core query), then searches whenever the core query
+    /// could benefit from real-time data. Never uses cached/training knowledge
+    /// for financial, market, news, or weather queries.
+    func searchForAgent(_ query: String, maxResults: Int = 5) async -> [RAGResult] {
+        let coreQuery = stripSchedulingLanguage(query)
+        guard hasRealTimeIntent(coreQuery) else { return [] }
+        return await search(coreQuery, maxResults: maxResults)
+    }
+
     // MARK: - Search intent detection
 
-    /// Returns true only when the query is clearly asking for external information
-    /// that the model cannot answer from memory, calendar, or local documents.
-    ///
-    /// Intentionally conservative: personal questions ("my name is…", "remind me…"),
-    /// short conversational messages, and anything already handled by calendar or
-    /// memory should NOT trigger a web search.
+    /// Conservative gate — for general chat.
     private func hasSearchIntent(_ query: String) -> Bool {
         let lower = query.lowercased()
-        let trimmed = lower.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard lower.split(separator: " ").count >= 3 else { return false }
 
-        // Too short to be a research question.
-        guard trimmed.split(separator: " ").count >= 3 else { return false }
-
-        // Clearly personal — about the user themselves, not the world.
         let personalPrefixes = ["my ", "i am ", "i'm ", "i have ", "remind me",
                                 "remember that", "my name", "about me"]
         if personalPrefixes.contains(where: { lower.hasPrefix($0) }) { return false }
 
-        // Explicit research signals.
-        let researchKeywords: [String] = [
-            // Question words aimed at facts
-            "who is", "who was", "who are", "who were",
-            "what is", "what are", "what was", "what were",
-            "when is", "when was", "when did", "when does",
-            "where is", "where was", "where are",
-            "how to", "how do", "how does", "how did", "how much", "how many",
-            "why is", "why does", "why did", "why are",
-            // Current-event signals
+        let keywords: [String] = [
+            "who is", "who was", "who are", "what is", "what are", "what was",
+            "when is", "when was", "when did", "where is", "where are",
+            "how to", "how do", "how does", "how much", "how many",
+            "why is", "why does", "why did",
             "latest", "recent", "news", "current", "today's", "right now",
             "just announced", "just released", "breaking",
-            // Explicit search intent
-            "search", "look up", "find out", "google", "tell me about",
-            // Common factual lookups
+            "search", "look up", "find out", "tell me about",
             "price of", "cost of", "weather", "temperature",
-            "definition of", "meaning of", "explain",
-            "tutorial", "how-to", "guide",
+            "definition of", "meaning of", "explain", "tutorial",
         ]
-        return researchKeywords.contains { lower.contains($0) }
+        return keywords.contains { lower.contains($0) }
+    }
+
+    /// Liberal gate — for agent conversations. Triggers on any query that
+    /// likely requires real-time data: financial, market, news, weather, sports.
+    func hasRealTimeIntent(_ query: String) -> Bool {
+        let lower = query.lowercased()
+        guard lower.split(separator: " ").count >= 2 else { return false }
+
+        // Pure personal intent → no search.
+        let personalPrefixes = ["my ", "i am ", "i'm ", "i feel ", "i want to ", "help me "]
+        if personalPrefixes.contains(where: { lower.hasPrefix($0) }) { return false }
+
+        let realTimeTerms: [String] = [
+            // Finance & markets
+            "market", "stock", "share", "mover", "gainer", "loser", "ticker",
+            "nasdaq", "s&p", "dow", "nyse", "ftse", "nikkei", "crypto",
+            "bitcoin", "ethereum", "price", "trading", "earnings", "ipo",
+            "inflation", "gdp", "interest rate", "fed", "fed rate",
+            "portfolio", "invest", "dividend", "index", "etf",
+            // News & current events
+            "news", "latest", "today", "current", "right now", "breaking",
+            "headline", "report", "update", "just", "recently", "announced",
+            "happening", "trending",
+            // Weather
+            "weather", "forecast", "temperature", "rain", "snow", "humidity",
+            // Sports
+            "score", "game", "match", "result", "standings", "league",
+            // General real-time
+            "how much is", "price of", "value of", "rate of",
+            "who won", "who is leading",
+        ]
+        return realTimeTerms.contains { lower.contains($0) }
+    }
+
+    // MARK: - Scheduling language stripping
+
+    /// Removes scheduling phrases from a query so the core information request
+    /// can be searched. "Top 5 market movers every day at 8am" → "Top 5 market movers".
+    func stripSchedulingLanguage(_ query: String) -> String {
+        var result = query
+
+        // Remove time expressions: "at 8am", "at 9:30 PM", etc.
+        result = result.replacingOccurrences(
+            of: #"\bat\s+\d{1,2}(:\d{2})?\s*(am|pm|AM|PM)?\b"#,
+            with: " ", options: .regularExpression
+        )
+        // Remove recurrence: "every day", "every morning", "every weekday", "daily", "weekly"
+        result = result.replacingOccurrences(
+            of: #"\b(every\s+(day|morning|night|evening|weekday|weekend|week|month|\w+day)|daily|weekly|monthly)\b"#,
+            with: " ", options: [.regularExpression, .caseInsensitive]
+        )
+        // Remove "can you" / "could you" / "please" filler
+        result = result.replacingOccurrences(
+            of: #"^(can you|could you|please|i'd like you to|i want you to)\s+"#,
+            with: "", options: [.regularExpression, .caseInsensitive]
+        )
+        // Collapse whitespace
+        result = result
+            .replacingOccurrences(of: #"\s{2,}"#, with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        return result.isEmpty ? query : result
     }
 
     // MARK: - Core search

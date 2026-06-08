@@ -33,7 +33,8 @@ actor LLMService {
         ragContext: [RAGResult] = [],
         scheduleContext: String = "",
         relevantMemories: [String] = [],
-        systemPromptOverride: String? = nil
+        systemPromptOverride: String? = nil,
+        systemNote: String = ""
     ) -> AsyncThrowingStream<String, Error> {
         let instructions = buildInstructions(
             base: systemPromptOverride ?? defaultSystemPrompt,
@@ -41,7 +42,8 @@ actor LLMService {
             userProfile: userProfile,
             ragContext: ragContext,
             scheduleContext: scheduleContext,
-            relevantMemories: relevantMemories
+            relevantMemories: relevantMemories,
+            systemNote: systemNote
         )
 
         return AsyncThrowingStream { continuation in
@@ -68,7 +70,8 @@ actor LLMService {
         userProfile: String,
         ragContext: [RAGResult],
         scheduleContext: String,
-        relevantMemories: [String]
+        relevantMemories: [String],
+        systemNote: String = ""
     ) -> String {
         var sections = [base]
 
@@ -147,6 +150,15 @@ actor LLMService {
                 --- End of history ---
                 Use the above purely for context. Do not repeat, quote, or echo any part \
                 of it in your response.
+                """)
+        }
+
+        if !systemNote.isEmpty {
+            sections.append("""
+
+                --- Completed action (acknowledge in your response) ---
+                \(systemNote)
+                --- End of action ---
                 """)
         }
 

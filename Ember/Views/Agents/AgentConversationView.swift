@@ -22,6 +22,7 @@ struct AgentConversationView: View {
                 modelUnavailableBanner
             }
             messageList
+            jobCreatedBanner
             sourceAttributionBar
             InputBarView(
                 text: $inputText,
@@ -62,6 +63,13 @@ struct AgentConversationView: View {
             fireJobTriggerIfNeeded()
         }
         .onDisappear { viewModel.stopObserving() }
+        .onChange(of: viewModel.newJobBanner) { _, newValue in
+            guard newValue != nil else { return }
+            Task {
+                try? await Task.sleep(for: .seconds(6))
+                withAnimation { viewModel.newJobBanner = nil }
+            }
+        }
     }
 
     // MARK: - Message list
@@ -133,6 +141,33 @@ struct AgentConversationView: View {
         .glassEffect(in: RoundedRectangle(cornerRadius: 12))
         .padding(.horizontal)
         .padding(.top, 8)
+    }
+
+    @ViewBuilder
+    private var jobCreatedBanner: some View {
+        if let banner = viewModel.newJobBanner {
+            HStack(spacing: 8) {
+                Image(systemName: "clock.badge.checkmark.fill")
+                    .foregroundStyle(.green)
+                Text(banner)
+                    .font(.caption)
+                    .lineLimit(2)
+                Spacer()
+                Button { withAnimation { viewModel.newJobBanner = nil } } label: {
+                    Image(systemName: "xmark")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(.green.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+            .overlay(RoundedRectangle(cornerRadius: 10).stroke(.green.opacity(0.25), lineWidth: 1))
+            .padding(.horizontal)
+            .padding(.bottom, 4)
+            .transition(.opacity.combined(with: .move(edge: .top)))
+        }
     }
 
     @ViewBuilder
