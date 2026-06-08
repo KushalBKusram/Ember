@@ -8,9 +8,10 @@ struct InputBarView: View {
     let onCancel: () -> Void
     var onGenerateImage: (() -> Void)? = nil
 
-    @StateObject private var speech = SpeechService.shared
+    // @ObservedObject: SpeechService.shared is an external singleton — we observe it,
+    // not own it. @StateObject would incorrectly claim lifecycle ownership.
+    @ObservedObject private var speech = SpeechService.shared
     @FocusState private var focused: Bool
-    @State private var isRecording = false
 
     private var canSend: Bool { !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 

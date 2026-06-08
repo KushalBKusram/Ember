@@ -24,5 +24,4 @@ struct Message: Identifiable, Codable, FetchableRecord, PersistableRecord, Senda
     }
 
     static let databaseTableName = "message"
-    static let conversation = belongsTo(Conversation.self)
 }

@@ -370,7 +370,6 @@ private struct IdentityPage: View {
 
     private func complete() {
         let text = identityText.trimmingCharacters(in: .whitespacesAndNewlines)
-        AppSettings.userIdentity = text
         if !text.isEmpty {
             let captured = text
             AppSettings.isInitialisingProfile = true

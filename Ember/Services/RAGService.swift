@@ -168,9 +168,9 @@ actor RAGService {
             var bestIdx = remaining.first!
 
             for idx in remaining {
-                let relevance = cosineSimilarity(query, candidates[idx].embedding)
+                let relevance = EmbeddingService.cosineSimilarity(query, candidates[idx].embedding)
                 let redundancy: Float = selected.isEmpty ? 0 :
-                    (selected.map { cosineSimilarity(candidates[$0].embedding, candidates[idx].embedding) }.max() ?? 0)
+                    (selected.map { EmbeddingService.cosineSimilarity(candidates[$0].embedding, candidates[idx].embedding) }.max() ?? 0)
                 let score = lambda * relevance - (1 - lambda) * redundancy
                 if score > bestScore {
                     bestScore = score
@@ -187,21 +187,11 @@ actor RAGService {
                 content: candidates[idx].content,
                 sourceTitle: candidates[idx].title,
                 sourceIcon: candidates[idx].icon,
-                score: cosineSimilarity(query, candidates[idx].embedding)
+                score: EmbeddingService.cosineSimilarity(query, candidates[idx].embedding)
             )
         }
     }
 
-    // MARK: - Math
-
-    private func cosineSimilarity(_ a: [Float], _ b: [Float]) -> Float {
-        guard a.count == b.count, !a.isEmpty else { return 0 }
-        let dot = zip(a, b).reduce(Float(0)) { $0 + $1.0 * $1.1 }
-        let magA = sqrt(a.reduce(Float(0)) { $0 + $1 * $1 })
-        let magB = sqrt(b.reduce(Float(0)) { $0 + $1 * $1 })
-        guard magA > 0, magB > 0 else { return 0 }
-        return dot / (magA * magB)
-    }
 }
 
 enum RAGError: Error {

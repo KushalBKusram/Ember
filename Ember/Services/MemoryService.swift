@@ -36,7 +36,6 @@ actor MemoryService {
 
     func processExchange(userMessage: Message, assistantMessage: Message) async {
         guard AppSettings.memoryEnabled else { return }
-
         do {
             let session = LanguageModelSession(instructions: extractionInstructions)
             let prompt = """
@@ -49,62 +48,12 @@ actor MemoryService {
                 Extract memorable personal facts ONLY from what the user wrote above. \
                 Ignore everything the assistant said.
                 """
-
-            let result = try await session.respond(
-                to: prompt,
-                generating: ExtractedMemoryList.self
-            )
-
-            // Load existing memories once; mutated during the loop as superseded
-            // facts are deleted so later iterations don't match stale entries.
-            var knownMemories = (try? db.activeMemories()) ?? []
-
-            var savedAny = false
-            for fact in result.content.facts {
-                let trimmed = fact.content.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !trimmed.isEmpty else { continue }
-
-                let (sim, topMatch) = await embedder.mostSimilar(of: trimmed, in: knownMemories)
-
-                // ── Band 1 (≥ 0.88): near-identical — reinforce, don't duplicate. ─
-                // Bumping lastAccessedAt signals that this fact has been confirmed
-                // again, keeping it fresh in recency-ranked retrievals and synthesis.
-                if sim >= 0.88 {
-                    if var reinforce = topMatch {
-                        reinforce.lastAccessedAt = Date()
-                        try? db.saveMemory(&reinforce)
-                    }
-                    continue
-                }
-
-                // ── Band 2 (0.70–0.87): related topic — may be a correction. ──────
-                // LLM decides: supersession (delete old + save new) vs
-                // complementary (save new alongside the existing fact).
-                if sim >= 0.70, let conflicting = topMatch {
-                    let supersedes = await checkSupersession(newFact: trimmed, against: conflicting)
-                    if supersedes {
-                        try? db.deleteMemory(conflicting)
-                        knownMemories.removeAll { $0.id == conflicting.id }
-                    }
-                }
-
-                // ── Band 3 (< 0.70): unrelated new fact — save normally. ───────────
-                let category = Memory.Category(rawValue: fact.category) ?? .episodic
-                var memory = Memory.make(content: trimmed, category: category)
-                if let vector = await embedder.embed(trimmed) {
-                    memory.embedding = vector.asData
-                }
-                try db.saveMemory(&memory)
-                knownMemories.append(memory)
-                savedAny = true
-            }
-
-            if savedAny {
+            let result = try await session.respond(to: prompt, generating: ExtractedMemoryList.self)
+            var known = (try? db.activeMemories()) ?? []
+            if try await absorbFacts(result.content.facts, into: &known, fallbackCategory: .episodic) {
                 await synthesizeProfile()
             }
-        } catch {
-            // Extraction is best-effort — silent failure is acceptable
-        }
+        } catch { /* best-effort */ }
     }
 
     // MARK: - Query-time retrieval
@@ -174,12 +123,8 @@ actor MemoryService {
     }
 
     private func touchAccessed(_ memories: [Memory]) {
-        let now = Date()
-        for memory in memories {
-            var updated = memory
-            updated.lastAccessedAt = now
-            try? db.saveMemory(&updated)
-        }
+        // Batch all updates into a single write transaction instead of N separate ones.
+        try? db.touchMemoryAccessDates(ids: memories.map(\.id))
     }
 
     func synthesizeProfileIfNeeded() async {
@@ -204,7 +149,6 @@ actor MemoryService {
             relationships, and goals. State each fact concisely in third person.
             Only extract clearly stated facts — skip anything hedged or uncertain.
             """
-
         do {
             let session = LanguageModelSession(instructions: identityInstructions)
             let prompt = """
@@ -214,50 +158,63 @@ actor MemoryService {
 
                 Extract memorable facts about this person.
                 """
-
             let result = try await session.respond(to: prompt, generating: ExtractedMemoryList.self)
+            var known = (try? db.activeMemories()) ?? []
+            // Onboarding defaults to .preference when the model returns an unrecognised category.
+            if try await absorbFacts(result.content.facts, into: &known, fallbackCategory: .preference) {
+                await synthesizeProfile()
+            }
+        } catch { /* best-effort */ }
+    }
 
-            // Apply the same 3-band pipeline as processExchange so the onboarding
-            // path doesn't bypass dedup, reinforcement, or supersession.
-            var knownMemories = (try? db.activeMemories()) ?? []
+    // MARK: - 3-band absorption pipeline
 
-            var savedAny = false
-            for fact in result.content.facts {
-                let content = fact.content.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !content.isEmpty else { continue }
+    /// Applies deduplication, reinforcement, and supersession to a list of extracted facts,
+    /// mutating `knownMemories` as entries are added or removed so later facts in the
+    /// same batch do not collide against stale data.
+    ///
+    /// - Returns: `true` if at least one new fact was persisted (used to gate profile re-synthesis).
+    @discardableResult
+    private func absorbFacts(
+        _ facts: [ExtractedFact],
+        into knownMemories: inout [Memory],
+        fallbackCategory: Memory.Category
+    ) async throws -> Bool {
+        var savedAny = false
+        for fact in facts {
+            let trimmed = fact.content.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { continue }
 
-                let (sim, topMatch) = await embedder.mostSimilar(of: content, in: knownMemories)
+            let (sim, topMatch) = await embedder.mostSimilar(of: trimmed, in: knownMemories)
 
-                if sim >= 0.88 {
-                    if var reinforce = topMatch {
-                        reinforce.lastAccessedAt = Date()
-                        try? db.saveMemory(&reinforce)
-                    }
-                    continue
+            // ── Band 1 (≥ 0.88): near-identical — reinforce, don't duplicate. ─────
+            if sim >= 0.88 {
+                if var reinforce = topMatch {
+                    reinforce.lastAccessedAt = Date()
+                    try? db.saveMemory(&reinforce)
                 }
-
-                if sim >= 0.70, let conflicting = topMatch {
-                    let supersedes = await checkSupersession(newFact: content, against: conflicting)
-                    if supersedes {
-                        try? db.deleteMemory(conflicting)
-                        knownMemories.removeAll { $0.id == conflicting.id }
-                    }
-                }
-
-                let category = Memory.Category(rawValue: fact.category) ?? .preference
-                var memory = Memory.make(content: content, category: category)
-                if let vector = await embedder.embed(content) {
-                    memory.embedding = vector.asData
-                }
-                try db.saveMemory(&memory)
-                knownMemories.append(memory)
-                savedAny = true
+                continue
             }
 
-            if savedAny { await synthesizeProfile() }
-        } catch {
-            // Best-effort — silent failure acceptable
+            // ── Band 2 (0.70–0.87): related topic — LLM decides supersession. ─────
+            if sim >= 0.70, let conflicting = topMatch {
+                if await checkSupersession(newFact: trimmed, against: conflicting) {
+                    try? db.deleteMemory(conflicting)
+                    knownMemories.removeAll { $0.id == conflicting.id }
+                }
+            }
+
+            // ── Band 3 (< 0.70): genuinely new fact — save. ──────────────────────
+            let category = Memory.Category(rawValue: fact.category) ?? fallbackCategory
+            var memory = Memory.make(content: trimmed, category: category)
+            if let vector = await embedder.embed(trimmed) {
+                memory.embedding = vector.asData
+            }
+            try db.saveMemory(&memory)
+            knownMemories.append(memory)
+            savedAny = true
         }
+        return savedAny
     }
 
     // MARK: - Management

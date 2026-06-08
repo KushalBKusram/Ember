@@ -466,6 +466,29 @@ extension AppDatabase {
             )
         }
     }
+
+    /// Marks both the job and its parent agent as run in a single write transaction.
+    func touchJobAndAgentRunDate(jobId: UUID, agentId: UUID) throws {
+        let now = Date()
+        try dbPool.write { db in
+            try db.execute(sql: "UPDATE agent_job SET lastRunAt = ? WHERE id = ?",  arguments: [now, jobId])
+            try db.execute(sql: "UPDATE agent    SET lastRunAt = ? WHERE id = ?",  arguments: [now, agentId])
+        }
+    }
+
+    /// Updates `lastAccessedAt` for multiple memories in a single write transaction.
+    func touchMemoryAccessDates(ids: [UUID]) throws {
+        guard !ids.isEmpty else { return }
+        let now = Date()
+        try dbPool.write { db in
+            for id in ids {
+                try db.execute(
+                    sql: "UPDATE memory SET lastAccessedAt = ? WHERE id = ?",
+                    arguments: [now, id.uuidString]
+                )
+            }
+        }
+    }
 }
 
 // MARK: - RAG Chunk queries

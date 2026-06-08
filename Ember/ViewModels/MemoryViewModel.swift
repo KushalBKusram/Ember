@@ -23,6 +23,19 @@ final class MemoryViewModel {
         }
     }
 
+    /// Non-episodic memories (Preferences, Projects, Relationships) shown
+    /// under "What Ember knows" as permanent facts.
+    var savedMemories: [Memory] {
+        memoriesByCategory
+            .filter { $0.0 != .episodic }
+            .flatMap { $0.1 }
+    }
+
+    /// Episodic-only memories — temporary observations with a 30-day TTL.
+    var recentMemories: [Memory] {
+        memoriesByCategory.first { $0.0 == .episodic }?.1 ?? []
+    }
+
     func startObserving() {
         observationTask?.cancel()
         observationTask = Task {

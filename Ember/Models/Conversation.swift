@@ -17,5 +17,4 @@ struct Conversation: Identifiable, Codable, Hashable, FetchableRecord, Persistab
     }
 
     static let databaseTableName = "conversation"
-    static let messages = hasMany(Message.self)
 }

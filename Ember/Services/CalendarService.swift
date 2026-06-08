@@ -178,6 +178,14 @@ actor CalendarService {
 
     // MARK: - Formatting
 
+    /// Shared formatter for event time display. `nonisolated static` so it is
+    /// accessible from `detailLine` (also nonisolated) without crossing the actor.
+    private nonisolated static let timeFormatter: DateFormatter = {
+        let fmt = DateFormatter()
+        fmt.dateFormat = "h:mm a"
+        return fmt
+    }()
+
     /// Full detail line used in the "Event details" section.
     /// Format: "Title: h:mm a–h:mm a · Location · First line of notes (≤80 chars)"
     private nonisolated func detailLine(_ event: EKEvent) -> String {
@@ -185,8 +193,7 @@ actor CalendarService {
         if event.isAllDay {
             timePart = "All day"
         } else {
-            let fmt = DateFormatter()
-            fmt.dateFormat = "h:mm a"
+            let fmt = Self.timeFormatter
             timePart = "\(fmt.string(from: event.startDate))–\(fmt.string(from: event.endDate))"
         }
 
@@ -205,16 +212,20 @@ actor CalendarService {
         return parts.joined(separator: " · ")
     }
 
+    private nonisolated static let dueDateFormatter: DateFormatter = {
+        let fmt = DateFormatter()
+        fmt.dateStyle = .medium
+        fmt.timeStyle = .short
+        return fmt
+    }()
+
     /// "• Buy groceries (due Jun 9, 5:00 PM)"
     /// Static + nonisolated so it is safe to call from the EventKit callback thread.
     private static func formatReminder(_ reminder: EKReminder) -> String {
         var text = "• \(reminder.title ?? "Untitled")"
         if let comps = reminder.dueDateComponents,
            let date = Calendar.current.date(from: comps) {
-            let fmt = DateFormatter()
-            fmt.dateStyle = .medium
-            fmt.timeStyle = .short
-            text += " (due \(fmt.string(from: date)))"
+            text += " (due \(dueDateFormatter.string(from: date)))"
         }
         return text
     }

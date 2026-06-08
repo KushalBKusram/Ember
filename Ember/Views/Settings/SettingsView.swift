@@ -63,7 +63,7 @@ struct SettingsView: View {
 
                 Section("About") {
                     LabeledContent("Version", value: "\(AppSettings.currentVersion) (v1 candidate)")
-                    Link("Source & License", destination: URL(string: "https://github.com")!)
+                    Link("Source & License", destination: URL(string: "https://github.com/KushalBKusram/Ember")!)
                 }
             }
             .navigationTitle("Settings")

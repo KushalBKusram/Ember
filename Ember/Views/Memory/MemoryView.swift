@@ -169,18 +169,10 @@ struct MemoryView: View {
         .padding(.horizontal, 16)
     }
 
-    // MARK: - Grouped memory helpers
+    // MARK: - Grouped memory helpers (delegated to ViewModel)
 
-    private var savedMemories: [Memory] {
-        viewModel.memoriesByCategory
-            .filter { $0.0 != .episodic }
-            .flatMap { $0.1 }
-    }
-
-    private var recentMemories: [Memory] {
-        viewModel.memoriesByCategory
-            .first { $0.0 == .episodic }?.1 ?? []
-    }
+    private var savedMemories: [Memory] { viewModel.savedMemories }
+    private var recentMemories: [Memory] { viewModel.recentMemories }
 
     // MARK: - Empty state
 

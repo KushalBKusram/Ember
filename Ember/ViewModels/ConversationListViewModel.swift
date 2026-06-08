@@ -7,7 +7,6 @@ final class ConversationListViewModel {
     var conversations: [Conversation] = []
     var lastMessagePreview: [UUID: String] = [:]
     var searchQuery = ""
-    var isLoading = false
 
     private var observationTask: Task<Void, Never>?
     private let db = AppDatabase.shared

@@ -63,8 +63,7 @@ actor AgentService {
     }
 
     func touchJobRun(_ jobId: UUID, agentId: UUID) throws {
-        try db.touchJobRunDate(jobId)
-        try db.touchAgentRunDate(agentId)
+        try db.touchJobAndAgentRunDate(jobId: jobId, agentId: agentId)
     }
 
     // MARK: - Notification scheduling

@@ -60,7 +60,7 @@ actor EmbeddingService {
         var bestMemory: Memory? = nil
         for m in memories {
             guard let data = m.embedding, let existingVec = [Float](data: data) else { continue }
-            let score = cosineSimilarity(vec, existingVec)
+            let score = Self.cosineSimilarity(vec, existingVec)
             if score > bestScore { bestScore = score; bestMemory = m }
         }
         return (bestScore, bestMemory)
@@ -75,7 +75,7 @@ actor EmbeddingService {
 
         let withEmbedding: [Scored] = memories.compactMap { m in
             guard let data = m.embedding, let vec = [Float](data: data) else { return nil }
-            return (m, cosineSimilarity(queryVec, vec))
+            return (m, Self.cosineSimilarity(queryVec, vec))
         }.sorted { $0.score > $1.score }
 
         let withoutEmbedding = memories.filter { $0.embedding == nil }
@@ -85,7 +85,10 @@ actor EmbeddingService {
 
     // MARK: - Math
 
-    private func cosineSimilarity(_ a: [Float], _ b: [Float]) -> Float {
+    /// Cosine similarity between two equal-length float vectors.
+    /// `nonisolated static` so `RAGService` (a different actor) can call it
+    /// without `await`, avoiding unnecessary actor hops for a pure computation.
+    nonisolated static func cosineSimilarity(_ a: [Float], _ b: [Float]) -> Float {
         guard a.count == b.count, !a.isEmpty else { return 0 }
         let dot = zip(a, b).reduce(Float(0)) { $0 + $1.0 * $1.1 }
         let magA = sqrt(a.reduce(Float(0)) { $0 + $1 * $1 })

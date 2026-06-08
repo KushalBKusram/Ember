@@ -31,11 +31,6 @@ enum AppSettings {
         set { UserDefaults.standard.set(newValue, forKey: "hasCompletedOnboarding") }
     }
 
-    static var userIdentity: String {
-        get { UserDefaults.standard.string(forKey: "userIdentity") ?? "" }
-        set { UserDefaults.standard.set(newValue, forKey: "userIdentity") }
-    }
-
     /// True while the initial profile is being synthesised from the
     /// onboarding identity text. Surfaced as a toast in the first-run app.
     static var isInitialisingProfile: Bool {

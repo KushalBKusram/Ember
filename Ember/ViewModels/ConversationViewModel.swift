@@ -2,7 +2,6 @@ import Foundation
 import GRDB
 import OSLog
 
-private let perfLog = OSLog(subsystem: "com.kushal.ember", category: "perf")
 private let perfSignposter = OSSignposter(logHandle: .init(subsystem: "com.kushal.ember", category: "perf"))
 
 @MainActor
