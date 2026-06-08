@@ -179,6 +179,38 @@ final class AppDatabase: Sendable {
             }
         }
 
+        migrator.registerMigration("v6_agents") { db in
+            try db.create(table: "agent") { t in
+                t.primaryKey("id", .text)
+                t.column("name", .text).notNull()
+                t.column("emoji", .text).notNull()
+                t.column("agentDescription", .text).notNull()
+                t.column("systemPrompt", .text).notNull()
+                t.column("webSearchEnabled", .boolean).notNull().defaults(to: true)
+                t.column("calendarEnabled", .boolean).notNull().defaults(to: false)
+                t.column("memoryEnabled", .boolean).notNull().defaults(to: true)
+                t.column("ragEnabled", .boolean).notNull().defaults(to: false)
+                t.column("conversationId", .text).notNull()
+                t.column("createdAt", .datetime).notNull()
+                t.column("lastRunAt", .datetime)
+            }
+
+            try db.create(table: "agent_job") { t in
+                t.primaryKey("id", .text)
+                t.column("agentId", .text).notNull()
+                    .references("agent", onDelete: .cascade)
+                t.column("name", .text).notNull()
+                t.column("prompt", .text).notNull()
+                t.column("scheduleHour", .integer).notNull()
+                t.column("scheduleMinute", .integer).notNull()
+                t.column("scheduleDaysRaw", .text).notNull().defaults(to: "")
+                t.column("isEnabled", .boolean).notNull().defaults(to: true)
+                t.column("createdAt", .datetime).notNull()
+                t.column("lastRunAt", .datetime)
+            }
+            try db.create(indexOn: "agent_job", columns: ["agentId"])
+        }
+
         try migrator.migrate(dbPool)
     }
 }
@@ -350,6 +382,88 @@ extension AppDatabase {
     func deleteRAGDocument(_ doc: RAGDocument) throws {
         try dbPool.write { db in
             _ = try doc.delete(db)
+        }
+    }
+}
+
+// MARK: - Agent queries
+
+extension AppDatabase {
+    func allAgents() throws -> [Agent] {
+        try dbPool.read { db in
+            try Agent.order(Column("createdAt").desc).fetchAll(db)
+        }
+    }
+
+    func allAgentsObservation() -> ValueObservation<ValueReducers.Fetch<[Agent]>> {
+        ValueObservation.tracking { db in
+            try Agent.order(Column("createdAt").desc).fetchAll(db)
+        }
+    }
+
+    func agent(id: UUID) throws -> Agent? {
+        try dbPool.read { db in try Agent.fetchOne(db, id: id) }
+    }
+
+    func saveAgent(_ agent: inout Agent) throws {
+        try dbPool.write { db in try agent.save(db) }
+    }
+
+    func deleteAgent(_ agent: Agent) throws {
+        try dbPool.write { db in _ = try agent.delete(db) }
+    }
+
+    func touchAgentRunDate(_ agentId: UUID) throws {
+        try dbPool.write { db in
+            try db.execute(
+                sql: "UPDATE agent SET lastRunAt = ? WHERE id = ?",
+                arguments: [Date(), agentId]
+            )
+        }
+    }
+}
+
+// MARK: - AgentJob queries
+
+extension AppDatabase {
+    func jobs(for agentId: UUID) throws -> [AgentJob] {
+        try dbPool.read { db in
+            try AgentJob
+                .filter(Column("agentId") == agentId)
+                .order(Column("createdAt").asc)
+                .fetchAll(db)
+        }
+    }
+
+    func jobsObservation(for agentId: UUID) -> ValueObservation<ValueReducers.Fetch<[AgentJob]>> {
+        ValueObservation.tracking { db in
+            try AgentJob
+                .filter(Column("agentId") == agentId)
+                .order(Column("createdAt").asc)
+                .fetchAll(db)
+        }
+    }
+
+    func allEnabledJobs() throws -> [AgentJob] {
+        try dbPool.read { db in
+            try AgentJob.filter(Column("isEnabled") == true).fetchAll(db)
+        }
+    }
+
+    func saveJob(_ job: inout AgentJob) throws {
+        try dbPool.write { db in try job.save(db) }
+    }
+
+    func deleteJob(_ job: AgentJob) throws {
+        try dbPool.write { db in _ = try job.delete(db) }
+    }
+
+    func touchJobRunDate(_ jobId: UUID) throws {
+        try dbPool.write { db in
+            try db.execute(
+                sql: "UPDATE agent_job SET lastRunAt = ? WHERE id = ?",
+                arguments: [Date(), jobId]
+            )
         }
     }
 }

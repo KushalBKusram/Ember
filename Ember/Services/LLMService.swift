@@ -32,10 +32,11 @@ actor LLMService {
         userProfile: String = "",
         ragContext: [RAGResult] = [],
         scheduleContext: String = "",
-        relevantMemories: [String] = []
+        relevantMemories: [String] = [],
+        systemPromptOverride: String? = nil
     ) -> AsyncThrowingStream<String, Error> {
         let instructions = buildInstructions(
-            base: defaultSystemPrompt,
+            base: systemPromptOverride ?? defaultSystemPrompt,
             history: history,
             userProfile: userProfile,
             ragContext: ragContext,

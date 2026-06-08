@@ -1,4 +1,5 @@
 import SwiftUI
+import UserNotifications
 
 @main
 struct EmberApp: App {
@@ -9,11 +10,11 @@ struct EmberApp: App {
 
     init() {
         // isInitialisingProfile is a transient UI state flag — it must never
-        // survive an app restart. If the background initialisation task was
-        // killed mid-flight the flag would otherwise stay true forever and
-        // show the "Building your profile…" spinner on every subsequent launch.
+        // survive an app restart.
         AppSettings.isInitialisingProfile = false
         VersionMigrator.runIfNeeded()
+        // Register notification delegate so job taps route to the Agents tab.
+        UNUserNotificationCenter.current().delegate = NotificationDelegate.shared
         #if DEBUG
         NetworkGuard.arm()
         #endif

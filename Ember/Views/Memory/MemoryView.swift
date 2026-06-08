@@ -39,9 +39,7 @@ struct MemoryView: View {
                 isPresented: $showingClearConfirm,
                 titleVisibility: .visible
             ) {
-                Button("Clear All", role: .destructive) {
-                    viewModel.clearAll()
-                }
+                Button("Clear All", role: .destructive) { viewModel.clearAll() }
             } message: {
                 Text("This permanently deletes everything Ember has learned about you.")
             }
@@ -50,87 +48,138 @@ struct MemoryView: View {
         .onDisappear { viewModel.stopObserving() }
     }
 
-    // MARK: - Profile card
-
-    private var profileCard: some View {
-        Section {
-            VStack(alignment: .leading, spacing: 8) {
-                if viewModel.isRegeneratingProfile {
-                    HStack(spacing: 8) {
-                        ProgressView().controlSize(.small)
-                        Text("Rebuilding profile…")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    }
-                } else if userProfile.isEmpty {
-                    Text("Profile will appear here once Ember has learned enough about you.")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                } else {
-                    Text(userProfile)
-                        .font(.subheadline)
-                }
-            }
-            .padding(.vertical, 4)
-        } header: {
-            HStack {
-                Text("Your Profile")
-                Spacer()
-                Button {
-                    viewModel.regenerateProfile()
-                } label: {
-                    Image(systemName: "arrow.clockwise")
-                        .font(.caption)
-                }
-                .disabled(viewModel.isRegeneratingProfile || viewModel.memories.isEmpty)
-            }
-        } footer: {
-            Text("Synthesised from your individual memories. This paragraph is what Ember reads at the start of every conversation.")
-        }
-    }
-
     // MARK: - Memory list
 
     private var memoryList: some View {
         List {
-            profileCard
 
+            // ── Profile card ───────────────────────────────────────────────
+            Section {
+                profileCard
+                    .listRowBackground(Color.clear)
+                    .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 8, trailing: 0))
+            }
+
+            // ── Memory paused notice ───────────────────────────────────────
             if !memoryEnabled {
                 Section {
                     HStack(spacing: 10) {
-                        Image(systemName: "brain.head.profile")
+                        Image(systemName: "pause.circle")
                             .foregroundStyle(.secondary)
                         Text("Memory learning is paused. Ember won't learn from new conversations.")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                     }
-                    .padding(.vertical, 4)
+                    .padding(.vertical, 2)
                 }
             }
 
-            ForEach(viewModel.memoriesByCategory, id: \.0) { category, items in
+            // ── Saved: Preferences + Projects + Relationships ──────────────
+            if !savedMemories.isEmpty {
                 Section {
-                    ForEach(items) { memory in
-                        MemoryRowView(memory: memory) {
+                    ForEach(savedMemories) { memory in
+                        MemoryRowView(memory: memory, showCategoryChip: true) {
                             viewModel.toggle(memory)
                         }
                         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                            Button(role: .destructive) {
-                                viewModel.delete(memory)
-                            } label: {
+                            Button(role: .destructive) { viewModel.delete(memory) } label: {
                                 Label("Delete", systemImage: "trash")
                             }
                         }
                     }
                 } header: {
-                    Label(category.label, systemImage: category.icon)
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
+                    Text("What Ember knows")
+                        .font(.subheadline).fontWeight(.semibold)
                         .foregroundStyle(.secondary)
                         .textCase(nil)
+                } footer: {
+                    Text("Stored permanently and referenced when relevant to your conversations.")
+                }
+            }
+
+            // ── Recent: Episodic only ──────────────────────────────────────
+            if !recentMemories.isEmpty {
+                Section {
+                    ForEach(recentMemories) { memory in
+                        MemoryRowView(memory: memory, showCategoryChip: false) {
+                            viewModel.toggle(memory)
+                        }
+                        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                            Button(role: .destructive) { viewModel.delete(memory) } label: {
+                                Label("Delete", systemImage: "trash")
+                            }
+                        }
+                    }
+                } header: {
+                    Text("Recent")
+                        .font(.subheadline).fontWeight(.semibold)
+                        .foregroundStyle(.secondary)
+                        .textCase(nil)
+                } footer: {
+                    Text("Temporary observations — each expires after 30 days.")
                 }
             }
         }
+        .listSectionSpacing(.compact)
+    }
+
+    // MARK: - Profile card
+
+    private var profileCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Label("Your Profile", systemImage: "person.text.rectangle")
+                    .font(.headline)
+                Spacer()
+                Button {
+                    viewModel.regenerateProfile()
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                .disabled(viewModel.isRegeneratingProfile || viewModel.memories.isEmpty)
+            }
+
+            Divider()
+
+            if viewModel.isRegeneratingProfile {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text("Rebuilding…")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+            } else if userProfile.isEmpty {
+                Text("Profile will appear here once Ember has learned enough about you.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            } else {
+                Text(userProfile)
+                    .font(.subheadline)
+                    .foregroundStyle(.primary)
+            }
+
+            Text("Ember uses this as a starting point in every conversation, alongside the individual facts below.")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+        }
+        .padding(16)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
+        .padding(.horizontal, 16)
+    }
+
+    // MARK: - Grouped memory helpers
+
+    private var savedMemories: [Memory] {
+        viewModel.memoriesByCategory
+            .filter { $0.0 != .episodic }
+            .flatMap { $0.1 }
+    }
+
+    private var recentMemories: [Memory] {
+        viewModel.memoriesByCategory
+            .first { $0.0 == .episodic }?.1 ?? []
     }
 
     // MARK: - Empty state

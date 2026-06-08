@@ -5,6 +5,9 @@ struct RootView: View {
 
     var body: some View {
         TabView {
+            Tab("Agents", systemImage: "sparkles") {
+                AgentsListView()
+            }
             Tab("Chats", systemImage: "bubble.left.and.bubble.right.fill") {
                 ConversationListView()
             }

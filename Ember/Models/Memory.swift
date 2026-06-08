@@ -1,5 +1,6 @@
 import Foundation
 import GRDB
+import SwiftUI
 
 struct Memory: Identifiable, Codable, FetchableRecord, PersistableRecord, Sendable, Hashable {
     var id: UUID
@@ -32,6 +33,15 @@ struct Memory: Identifiable, Codable, FetchableRecord, PersistableRecord, Sendab
             case .project:      return "hammer.fill"
             case .relationship: return "person.2.fill"
             case .episodic:     return "clock.fill"
+            }
+        }
+
+        var chipColor: Color {
+            switch self {
+            case .preference:   return .pink
+            case .project:      return .orange
+            case .relationship: return .blue
+            case .episodic:     return .purple
             }
         }
     }

@@ -30,6 +30,8 @@
 	<string>Ember can read your reminders to help manage your tasks.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>Ember uses speech recognition to convert your voice to text.</string>
+	<key>NSUserNotificationUsageDescription</key>
+	<string>Ember uses notifications to alert you when a scheduled agent job is ready to run.</string>
 	<key>UILaunchScreen</key>
 	<dict/>
 	<key>UISupportedInterfaceOrientations</key>
