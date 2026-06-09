@@ -7,6 +7,11 @@ actor MemoryService {
     private let db = AppDatabase.shared
     private let embedder = EmbeddingService.shared
 
+    /// Guards against two concurrent callers each starting an LLM synthesis
+    /// session and writing the profile twice. Because `MemoryService` is an
+    /// `actor`, this flag is read/written on the actor's executor without races.
+    private var isSynthesizing = false
+
     private let extractionInstructions = """
         You extract memorable personal facts about a user ONLY from what the user explicitly \
         wrote in their own message.
@@ -92,6 +97,10 @@ actor MemoryService {
     // MARK: - Profile synthesis
 
     func synthesizeProfile() async {
+        guard !isSynthesizing else { return }
+        isSynthesizing = true
+        defer { isSynthesizing = false }
+
         let memories = (try? db.activeMemories()) ?? []
         let enabled = memories.filter { $0.isEnabled }
 

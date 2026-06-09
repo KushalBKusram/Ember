@@ -214,12 +214,33 @@ final class AgentConversationViewModel {
 
     // MARK: - Scheduling intent detection
 
+    /// Scheduling vocabulary that strongly implies a recurring schedule request.
+    /// Checked synchronously before spinning up a `LanguageModelSession` so that
+    /// the vast majority of non-scheduling messages never touch the LLM at all.
+    private static let schedulingKeywords: [String] = [
+        "every day", "every morning", "every night", "every evening", "every week",
+        "every month", "every monday", "every tuesday", "every wednesday",
+        "every thursday", "every friday", "every saturday", "every sunday",
+        "daily", "weekly", "monthly", "each morning", "each night", "each week",
+        "each day", "recurring", "remind me each", "remind me every",
+        "give me a report", "send me a report", "schedule a",
+    ]
+
+    /// Returns `true` when `text` contains at least one scheduling keyword.
+    private func hasSchedulingVocab(_ text: String) -> Bool {
+        let lower = text.lowercased()
+        return Self.schedulingKeywords.contains { lower.contains($0) }
+    }
+
     /// Analyses the user's message with a lightweight `LanguageModelSession` to determine
     /// whether it requests a recurring scheduled task ("give me a report every day at 8am").
     /// If detected, auto-creates an `AgentJob` and returns a system note string to inject
     /// into the LLM context so the model naturally acknowledges the job in its reply.
     /// Returns `nil` if no scheduling intent is found or on any error (best-effort, silent).
     private func detectAndCreateJobIfNeeded(_ text: String) async -> String? {
+        // Fast path: skip the LLM round-trip when the message clearly lacks
+        // scheduling vocabulary. This covers the overwhelming majority of messages.
+        guard hasSchedulingVocab(text) else { return nil }
         do {
             let session = LanguageModelSession(instructions: """
                 You are a scheduling-intent parser for a personal AI agent app.

@@ -304,14 +304,34 @@ extension AppDatabase {
     func latestMessageContent(by conversationId: [UUID]) throws -> [UUID: String] {
         guard !conversationId.isEmpty else { return [:] }
         return try dbPool.read { db in
+            // Single subquery instead of N separate fetchOne calls:
+            // the inner GROUP BY picks MAX(createdAt) per conversation, the
+            // outer join resolves that timestamp back to the message content.
+            let placeholders = conversationId.map { _ in "?" }.joined(separator: ",")
+            var args = StatementArguments()
+            for id in conversationId { args += [id.uuidString] }
+
+            let rows = try Row.fetchAll(db, sql: """
+                SELECT m.conversationId, m.content
+                FROM message m
+                INNER JOIN (
+                    SELECT conversationId, MAX(createdAt) AS maxAt
+                    FROM message
+                    WHERE content != '' AND conversationId IN (\(placeholders))
+                    GROUP BY conversationId
+                ) latest
+                    ON m.conversationId = latest.conversationId
+                   AND m.createdAt      = latest.maxAt
+                   AND m.content        != ''
+                """, arguments: args)
+
             var out: [UUID: String] = [:]
-            for id in conversationId {
-                let msg = try Message
-                    .filter(Column("conversationId") == id)
-                    .filter(Column("content") != "")
-                    .order(Column("createdAt").desc)
-                    .fetchOne(db)
-                if let msg { out[id] = msg.content }
+            for row in rows {
+                if let idStr: String = row["conversationId"],
+                   let id = UUID(uuidString: idStr),
+                   let content: String = row["content"] {
+                    out[id] = content
+                }
             }
             return out
         }
@@ -540,17 +560,28 @@ extension AppDatabase {
 
     func allRAGChunks() throws -> [(chunk: RAGChunk, document: RAGDocument)] {
         try dbPool.read { db in
+            // Two queries instead of N+1:
+            //   1. Fetch all enabled documents.
+            //   2. Fetch all their chunks in one JOIN, then pair using the map.
             let docs = try RAGDocument
                 .filter(Column("isEnabled") == true)
                 .fetchAll(db)
-            var results: [(RAGChunk, RAGDocument)] = []
-            for doc in docs {
-                let chunks = try RAGChunk
-                    .filter(Column("documentId") == doc.id)
-                    .fetchAll(db)
-                results.append(contentsOf: chunks.map { ($0, doc) })
+            guard !docs.isEmpty else { return [] }
+
+            let docMap = Dictionary(uniqueKeysWithValues: docs.map { ($0.id, $0) })
+
+            let chunks = try RAGChunk.fetchAll(db, sql: """
+                SELECT rc.*
+                FROM rag_chunk rc
+                INNER JOIN rag_document rd ON rc.documentId = rd.id
+                WHERE rd.isEnabled = 1
+                ORDER BY rc.documentId, rc.chunkIndex
+                """)
+
+            return chunks.compactMap { chunk in
+                guard let doc = docMap[chunk.documentId] else { return nil }
+                return (chunk, doc)
             }
-            return results
         }
     }
 }
