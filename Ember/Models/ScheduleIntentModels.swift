@@ -1,5 +1,33 @@
 import FoundationModels
 
+// MARK: - Search routing
+
+/// Structured decision from the LLM search router used in agent conversations.
+/// The model decides *whether* a live web search is needed and, if so, writes
+/// an optimised search-engine query rather than forwarding the raw user message.
+@Generable
+struct SearchDecision {
+    @Guide(description: """
+        true when the query needs real-time or frequently changing data to be answered
+        accurately — e.g. live stock prices, today's news headlines, current weather,
+        recent sports results, newly announced products or events.
+        false for conceptual explanations, historical facts, creative writing, personal
+        tasks, scheduling requests, or anything well-covered by general knowledge.
+        """)
+    var needsSearch: Bool
+
+    @Guide(description: """
+        When needsSearch is true: a concise, search-engine-optimised query.
+        Prefer specific terms over vague phrases. Include temporal context when relevant.
+        Good examples: "AAPL stock price today", "BTC USD live price", "top market movers today",
+        "Fed interest rate decision 2025", "Premier League standings June 2025".
+        Empty string when needsSearch is false.
+        """)
+    var searchQuery: String
+}
+
+// MARK: - Schedule intent
+
 /// Structured result from analysing a user message for scheduling intent.
 /// Used by AgentConversationViewModel to auto-create AgentJobs from natural language.
 @Generable

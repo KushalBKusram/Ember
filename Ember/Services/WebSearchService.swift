@@ -1,4 +1,5 @@
 import Foundation
+import FoundationModels
 @preconcurrency import SwiftSoup
 
 /// Provides free web search via DuckDuckGo's no-JavaScript HTML endpoint.
@@ -9,30 +10,74 @@ actor WebSearchService {
 
     private let session = URLSession(configuration: .ephemeral)
 
-    // MARK: - Public interface
+    // MARK: - General chat search
 
-    /// Conservative gate for general chat — only fires on explicit research signals.
-    /// Designed for `async let` parallelism — both guards are synchronous so the
-    /// disabled/non-search path is effectively free.
+    /// Conservative gate for regular conversations. Fires only on explicit
+    /// research signals (factual questions, current events, etc.).
+    /// Synchronous guards keep the disabled path effectively free.
     func searchIfEnabled(_ query: String, maxResults: Int = 5) async -> [RAGResult] {
         guard AppSettings.webSearchEnabled else { return [] }
         guard hasSearchIntent(query) else { return [] }
         return await search(query, maxResults: maxResults)
     }
 
-    /// Liberal gate for agent conversations. Strips scheduling language first
-    /// ("every day at 8am" → core query), then searches whenever the core query
-    /// could benefit from real-time data. Never uses cached/training knowledge
-    /// for financial, market, news, or weather queries.
-    func searchForAgent(_ query: String, maxResults: Int = 5) async -> [RAGResult] {
-        let coreQuery = stripSchedulingLanguage(query)
-        guard hasRealTimeIntent(coreQuery) else { return [] }
-        return await search(coreQuery, maxResults: maxResults)
+    // MARK: - Agent search (LLM-routed)
+
+    /// Model-driven search for agent conversations.
+    ///
+    /// Instead of keyword matching, a lightweight `LanguageModelSession` with the
+    /// `SearchDecision` schema decides:
+    ///   1. **Does this query need live data?** — the model understands phrasing and
+    ///      intent, so "Help me understand what Bitcoin is doing" triggers correctly
+    ///      while "Explain what a P/E ratio means" does not.
+    ///   2. **What should we search for?** — the model writes a concise, search-engine-
+    ///      optimised query rather than forwarding the raw user message verbatim.
+    ///
+    /// The `agentContext` (agent description) is passed so the model can factor in
+    /// what kind of agent is running — a finance agent and a cooking agent react
+    /// differently to the same ambiguous message.
+    ///
+    /// This runs inside an `async let` block alongside other context fetches, so it
+    /// adds no sequential latency when other fetches (RAG, calendar) take longer.
+    func searchWithIntelligence(
+        for userMessage: String,
+        agentContext: String,
+        maxResults: Int = 5
+    ) async -> [RAGResult] {
+        do {
+            let session = LanguageModelSession(instructions: """
+                You are a search-routing assistant for an AI agent. \
+                Decide whether the user's message needs a live web search to be answered \
+                accurately with up-to-date information.
+
+                SEARCH when the answer depends on real-time or frequently changing data: \
+                live prices, stock quotes, today's news headlines, current weather, recent \
+                sports results, newly released products or announcements, current events.
+
+                DO NOT SEARCH for: explaining concepts or definitions, historical facts, \
+                creative writing, personal tasks, scheduling requests, or anything that is \
+                well-covered by stable general knowledge.
+
+                When searching, write a concise, search-engine-optimised query — not a copy \
+                of the user's message. Include "today" or the relevant year when temporal \
+                context matters.
+
+                Agent focus area: \(agentContext)
+                """)
+            let result = try await session.respond(
+                to: "User message: \"\(userMessage)\"",
+                generating: SearchDecision.self
+            )
+            let decision = result.content
+            guard decision.needsSearch, !decision.searchQuery.isEmpty else { return [] }
+            return await search(decision.searchQuery, maxResults: maxResults)
+        } catch {
+            return []  // Best-effort — never block a response on search failure.
+        }
     }
 
-    // MARK: - Search intent detection
+    // MARK: - Chat search intent (keyword gate for general chat only)
 
-    /// Conservative gate — for general chat.
     private func hasSearchIntent(_ query: String) -> Bool {
         let lower = query.lowercased()
         guard lower.split(separator: " ").count >= 3 else { return false }
@@ -53,40 +98,6 @@ actor WebSearchService {
             "definition of", "meaning of", "explain", "tutorial",
         ]
         return keywords.contains { lower.contains($0) }
-    }
-
-    /// Liberal gate — for agent conversations. Triggers on any query that
-    /// likely requires real-time data: financial, market, news, weather, sports.
-    ///
-    /// Note: no personal-prefix blocking here. `searchForAgent` is already
-    /// behind `agent.webSearchEnabled`, so phrases like "help me understand
-    /// Bitcoin" or "I want to know what the Dow is doing" must still trigger
-    /// a search — blocking on "help me" / "i want to" prefixes was causing
-    /// the finance agent to silently fall back to stale training data.
-    func hasRealTimeIntent(_ query: String) -> Bool {
-        let lower = query.lowercased()
-        guard lower.split(separator: " ").count >= 2 else { return false }
-
-        let realTimeTerms: [String] = [
-            // Finance & markets
-            "market", "stock", "share", "mover", "gainer", "loser", "ticker",
-            "nasdaq", "s&p", "dow", "nyse", "ftse", "nikkei", "crypto",
-            "bitcoin", "ethereum", "price", "trading", "earnings", "ipo",
-            "inflation", "gdp", "interest rate", "fed", "fed rate",
-            "portfolio", "invest", "dividend", "index", "etf",
-            // News & current events
-            "news", "latest", "today", "current", "right now", "breaking",
-            "headline", "report", "update", "just", "recently", "announced",
-            "happening", "trending",
-            // Weather
-            "weather", "forecast", "temperature", "rain", "snow", "humidity",
-            // Sports
-            "score", "game", "match", "result", "standings", "league",
-            // General real-time
-            "how much is", "price of", "value of", "rate of",
-            "who won", "who is leading",
-        ]
-        return realTimeTerms.contains { lower.contains($0) }
     }
 
     // MARK: - Scheduling language stripping

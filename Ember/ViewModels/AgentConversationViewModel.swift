@@ -123,9 +123,14 @@ final class AgentConversationViewModel {
         var scheduleContext = ""
         var systemNote      = ""
 
-        // Scheduling-intent detection runs only for user-typed messages (jobId == nil).
-        // Web search uses the liberal real-time gate (searchForAgent) instead of the
-        // conservative chat gate so finance/market/news terms always trigger a fetch.
+        // All four context fetches run in parallel via async let.
+        //
+        // searchWithIntelligence uses a lightweight LLM to decide:
+        //   (a) does THIS query for THIS agent need live web data?
+        //   (b) what is the optimal search engine query to run?
+        // This replaces the fragile keyword-list approach and means a finance agent
+        // correctly fetches live prices while a cooking agent doesn't trigger
+        // unnecessary web searches for the same ambiguous phrasing.
         async let jobNoteFetch: String? = (jobId == nil)
             ? detectAndCreateJobIfNeeded(text)
             : nil
@@ -136,7 +141,10 @@ final class AgentConversationViewModel {
             ? CalendarService.shared.fetchContext(for: text)
             : nil
         async let searchFetch   = agent.webSearchEnabled
-            ? WebSearchService.shared.searchForAgent(text)
+            ? WebSearchService.shared.searchWithIntelligence(
+                for: text,
+                agentContext: agent.agentDescription
+              )
             : []
 
         systemNote      = await jobNoteFetch ?? ""
