@@ -1,5 +1,6 @@
 import SwiftUI
 import UserNotifications
+import BackgroundTasks
 
 @main
 struct EmberApp: App {
@@ -15,6 +16,21 @@ struct EmberApp: App {
         VersionMigrator.runIfNeeded()
         // Register notification delegate so job taps route to the Agents tab.
         UNUserNotificationCenter.current().delegate = NotificationDelegate.shared
+        // Register the BGAppRefreshTask handler. Must be called before the app
+        // finishes launching — this is the correct place in SwiftUI apps.
+        BGTaskScheduler.shared.register(
+            forTaskWithIdentifier: BackgroundJobService.taskIdentifier,
+            using: nil
+        ) { task in
+            guard let refreshTask = task as? BGAppRefreshTask else {
+                task.setTaskCompleted(success: false)
+                return
+            }
+            // BGAppRefreshTask is an ObjC class with reference semantics — safe to cross
+            // the Sendable boundary; nonisolated(unsafe) suppresses the Swift 6 diagnostic.
+            nonisolated(unsafe) let sendableTask = refreshTask
+            Task { await BackgroundJobService.shared.handleRefreshTask(sendableTask) }
+        }
         #if DEBUG
         NetworkGuard.arm()
         #endif
@@ -46,8 +62,11 @@ struct EmberApp: App {
             }
         }
         .onChange(of: scenePhase) { _, phase in
-            if phase == .background && appLockEnabled {
-                withAnimation { isLocked = true }
+            if phase == .background {
+                if appLockEnabled { withAnimation { isLocked = true } }
+                // Re-submit the BGAppRefreshTask each time the app backgrounds so
+                // the system always has an up-to-date earliestBeginDate.
+                Task { await BackgroundJobService.shared.scheduleNextRefresh() }
             }
         }
     }

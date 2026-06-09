@@ -14,12 +14,22 @@ final class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate, Se
         withCompletionHandler completionHandler: @escaping () -> Void
     ) {
         let info = response.notification.request.content.userInfo
+
         if let agentStr = info["agentId"] as? String,
-           let jobStr   = info["jobId"]   as? String,
-           let agentId  = UUID(uuidString: agentStr),
-           let jobId    = UUID(uuidString: jobStr) {
-            Task { @MainActor in
-                AgentNavigationState.shared.pendingTrigger = (agentId: agentId, jobId: jobId)
+           let agentId  = UUID(uuidString: agentStr) {
+
+            if let isResult = info["isResult"] as? String, isResult == "1" {
+                // Result-ready notification: job already ran in the background.
+                // Just navigate to the agent conversation — don't re-trigger the job.
+                Task { @MainActor in
+                    AgentNavigationState.shared.pendingOpen = agentId
+                }
+            } else if let jobStr = info["jobId"] as? String,
+                      let jobId  = UUID(uuidString: jobStr) {
+                // Legacy tap-to-run notification: navigate and trigger the job.
+                Task { @MainActor in
+                    AgentNavigationState.shared.pendingTrigger = (agentId: agentId, jobId: jobId)
+                }
             }
         }
         completionHandler()

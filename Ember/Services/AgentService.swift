@@ -45,11 +45,15 @@ actor AgentService {
         if job.isEnabled {
             await scheduleNotifications(for: job)
         }
+        // Keep the BGAppRefreshTask window aligned with the updated job set.
+        await BackgroundJobService.shared.scheduleNextRefresh()
     }
 
     func deleteJob(_ job: AgentJob) throws {
         cancelNotifications(for: job)
         try db.deleteJob(job)
+        // deleteJob is synchronous — fire-and-forget Task for the async cross-actor call.
+        Task { await BackgroundJobService.shared.scheduleNextRefresh() }
     }
 
     func toggleJob(_ job: AgentJob) async throws {
@@ -60,6 +64,7 @@ actor AgentService {
         if updated.isEnabled {
             await scheduleNotifications(for: updated)
         }
+        await BackgroundJobService.shared.scheduleNextRefresh()
     }
 
     func touchJobRun(_ jobId: UUID, agentId: UUID) throws {

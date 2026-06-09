@@ -62,6 +62,36 @@ actor LLMService {
         }
     }
 
+    // MARK: - Non-streaming (background jobs)
+
+    /// Single-shot, non-streaming variant used by `BackgroundJobService`.
+    /// Identical context assembly to `streamResponse` but waits for the full
+    /// response before returning — appropriate for background execution where
+    /// there is no UI to update incrementally.
+    func respond(
+        to userMessage: String,
+        history: [Message],
+        userProfile: String = "",
+        ragContext: [RAGResult] = [],
+        scheduleContext: String = "",
+        relevantMemories: [String] = [],
+        systemPromptOverride: String? = nil,
+        systemNote: String = ""
+    ) async throws -> String {
+        let instructions = buildInstructions(
+            base: systemPromptOverride ?? defaultSystemPrompt,
+            history: history,
+            userProfile: userProfile,
+            ragContext: ragContext,
+            scheduleContext: scheduleContext,
+            relevantMemories: relevantMemories,
+            systemNote: systemNote
+        )
+        let session  = LanguageModelSession(instructions: instructions)
+        let response = try await session.respond(to: userMessage)
+        return response.content
+    }
+
     // MARK: - Private
 
     private func buildInstructions(

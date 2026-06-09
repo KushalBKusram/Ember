@@ -42,6 +42,65 @@ struct AgentJob: Identifiable, Codable, FetchableRecord, PersistableRecord, Send
         return String(format: "%d:%02d %@", h, scheduleMinute, period)
     }
 
+    /// True when the job's scheduled time has arrived and it has not yet run for this period.
+    /// Used by `BackgroundJobService` to determine which jobs to execute during a BGAppRefreshTask.
+    var isDue: Bool {
+        if let mins = intervalMinutes {
+            // Interval job: due if never run, or enough time has elapsed since the last run.
+            guard let last = lastRunAt else { return true }
+            return Date().timeIntervalSince(last) >= TimeInterval(max(15, mins) * 60)
+        } else {
+            // Time-based: due when today is a scheduled weekday, the clock time has passed,
+            // and we haven't already run since that time today.
+            let cal     = Calendar.current
+            let now     = Date()
+            let weekday = cal.component(.weekday, from: now)
+            guard effectiveWeekdays.contains(weekday) else { return false }
+            var comps   = cal.dateComponents([.year, .month, .day], from: now)
+            comps.hour   = scheduleHour
+            comps.minute = scheduleMinute
+            comps.second = 0
+            guard let todayRun = cal.date(from: comps), now >= todayRun else { return false }
+            guard let last = lastRunAt else { return true }
+            return last < todayRun
+        }
+    }
+
+    /// The earliest date at which this job should next fire.
+    /// Passed as `BGAppRefreshTaskRequest.earliestBeginDate` so the system knows
+    /// when to wake the app — it will not wake the app before this date.
+    var nextFireDate: Date {
+        let cal = Calendar.current
+        let now = Date()
+
+        if let mins = intervalMinutes {
+            guard let last = lastRunAt else { return now }
+            let candidate = last.addingTimeInterval(TimeInterval(max(15, mins) * 60))
+            return candidate > now ? candidate : now
+        } else {
+            // Find the soonest upcoming scheduled weekday+time occurrence.
+            // Search from 1 minute before now so a job due right now is found as "today"
+            // rather than next week.
+            var comps        = DateComponents()
+            comps.hour       = scheduleHour
+            comps.minute     = scheduleMinute
+            comps.second     = 0
+            let searchFrom   = Date(timeIntervalSinceNow: -60)
+            var soonest: Date?
+            for wd in effectiveWeekdays {
+                comps.weekday = wd
+                if let d = cal.nextDate(
+                    after: searchFrom,
+                    matching: comps,
+                    matchingPolicy: .nextTimePreservingSmallerComponents
+                ), soonest == nil || d < soonest! {
+                    soonest = d
+                }
+            }
+            return soonest ?? now.addingTimeInterval(24 * 3600)
+        }
+    }
+
     var scheduleDescription: String {
         if let mins = intervalMinutes {
             return Self.intervalLabel(mins)
