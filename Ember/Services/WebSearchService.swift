@@ -57,13 +57,15 @@ actor WebSearchService {
 
     /// Liberal gate — for agent conversations. Triggers on any query that
     /// likely requires real-time data: financial, market, news, weather, sports.
+    ///
+    /// Note: no personal-prefix blocking here. `searchForAgent` is already
+    /// behind `agent.webSearchEnabled`, so phrases like "help me understand
+    /// Bitcoin" or "I want to know what the Dow is doing" must still trigger
+    /// a search — blocking on "help me" / "i want to" prefixes was causing
+    /// the finance agent to silently fall back to stale training data.
     func hasRealTimeIntent(_ query: String) -> Bool {
         let lower = query.lowercased()
         guard lower.split(separator: " ").count >= 2 else { return false }
-
-        // Pure personal intent → no search.
-        let personalPrefixes = ["my ", "i am ", "i'm ", "i feel ", "i want to ", "help me "]
-        if personalPrefixes.contains(where: { lower.hasPrefix($0) }) { return false }
 
         let realTimeTerms: [String] = [
             // Finance & markets

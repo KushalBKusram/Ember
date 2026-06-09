@@ -1,4 +1,5 @@
 import Foundation
+import FoundationModels
 import GRDB
 import OSLog
 
@@ -305,9 +306,38 @@ final class ConversationViewModel {
     }
 
     private func autoTitle(from text: String) {
-        let words = text.split(separator: " ").prefix(5).joined(separator: " ")
+        // Apply a quick 4-word fallback immediately so the list row updates
+        // without waiting for the LLM call to complete.
+        let fallback = text.split(separator: " ").prefix(4).joined(separator: " ")
+        applyTitle(fallback.isEmpty ? "Conversation" : String(fallback))
+
+        // Refine with an LLM-generated noun phrase in the background.
+        // Task inherits the @MainActor context, so applyTitle is safe to call
+        // directly from the continuation without a further await MainActor.run.
+        Task {
+            do {
+                let session = LanguageModelSession(instructions: """
+                    You generate short conversation titles. \
+                    Reply with only a 2–5 word noun phrase that captures the core topic. \
+                    No leading articles (a, an, the), no verbs, no punctuation, no quotes. \
+                    Examples: "Python Debugging Help", "Paris Travel Plans", "Market Analysis"
+                    """)
+                let result = try await session.respond(
+                    to: "Conversation opening: \"\(text)\""
+                )
+                let title = result.content
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                    .trimmingCharacters(in: CharacterSet(charactersIn: "\"'."))
+                if !title.isEmpty && title.count <= 50 {
+                    applyTitle(title)
+                }
+            } catch { /* keep the fallback title */ }
+        }
+    }
+
+    private func applyTitle(_ title: String) {
         var updated = conversation
-        updated.title = words.isEmpty ? "Conversation" : String(words)
+        updated.title = title
         updated.updatedAt = Date()
         try? db.save(&updated)
         conversation = updated
