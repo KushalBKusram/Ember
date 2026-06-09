@@ -211,6 +211,14 @@ final class AppDatabase: Sendable {
             try db.create(indexOn: "agent_job", columns: ["agentId"])
         }
 
+        migrator.registerMigration("v7_interval_jobs") { db in
+            // Add optional interval column. NULL = time-based (existing behaviour).
+            // Non-null integer = repeat every N minutes (minimum 15).
+            try db.alter(table: "agent_job") { t in
+                t.add(column: "intervalMinutes", .integer)
+            }
+        }
+
         try migrator.migrate(dbPool)
     }
 }

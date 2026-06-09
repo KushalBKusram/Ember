@@ -6,10 +6,19 @@ struct JobEditorView: View {
 
     @Environment(\.dismiss) private var dismiss
 
-    @State private var name    = ""
-    @State private var prompt  = ""
-    @State private var time    = defaultTime
-    @State private var days:   Set<Int> = []   // empty = every day
+    // Common
+    @State private var name   = ""
+    @State private var prompt = ""
+
+    // Schedule type
+    @State private var scheduleType: ScheduleType = .atTime
+
+    // Time-based fields
+    @State private var time = Self.defaultTime
+    @State private var days: Set<Int> = []   // empty = every day
+
+    // Interval-based field
+    @State private var intervalMinutes: Int = 60
 
     private let service = AgentService.shared
 
@@ -27,10 +36,12 @@ struct JobEditorView: View {
     var body: some View {
         NavigationStack {
             Form {
+                // ── Name ──────────────────────────────────────────────────
                 Section {
                     TextField("e.g. Morning Digest", text: $name)
                 } header: { Text("Job Name") }
 
+                // ── Prompt ────────────────────────────────────────────────
                 Section {
                     TextField(
                         "e.g. Give me a morning finance digest including portfolio moves and relevant news.",
@@ -41,14 +52,43 @@ struct JobEditorView: View {
                 } header: { Text("Prompt") }
                   footer: { Text("This message is auto-sent to the agent when the job fires.") }
 
+                // ── Schedule type ─────────────────────────────────────────
                 Section {
-                    DatePicker("Time", selection: $time, displayedComponents: .hourAndMinute)
+                    Picker("Type", selection: $scheduleType) {
+                        ForEach(ScheduleType.allCases) { type in
+                            Text(type.label).tag(type)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .listRowBackground(Color.clear)
+                    .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 0))
                 } header: { Text("Schedule") }
 
-                Section {
-                    WeekdaySelectorView(selected: $days)
-                } footer: {
-                    Text(days.isEmpty ? "Runs every day." : "Runs on selected days only.")
+                // ── Time-based options ────────────────────────────────────
+                if scheduleType == .atTime {
+                    Section {
+                        DatePicker("Time", selection: $time, displayedComponents: .hourAndMinute)
+                    }
+                    Section {
+                        WeekdaySelectorView(selected: $days)
+                    } footer: {
+                        Text(days.isEmpty ? "Runs every day." : "Runs on selected days only.")
+                    }
+                }
+
+                // ── Interval-based options ────────────────────────────────
+                if scheduleType == .onInterval {
+                    Section {
+                        Picker("Repeat every", selection: $intervalMinutes) {
+                            ForEach(Self.intervalOptions, id: \.minutes) { option in
+                                Text(option.label).tag(option.minutes)
+                            }
+                        }
+                        .pickerStyle(.wheel)
+                        .frame(height: 140)
+                    } footer: {
+                        Text("A notification fires on this interval. Tap it to run the agent.")
+                    }
                 }
             }
             .navigationTitle(isEditing ? "Edit Job" : "New Job")
@@ -66,47 +106,106 @@ struct JobEditorView: View {
         }
     }
 
+    // MARK: - Interval options
+
+    private static let intervalOptions: [IntervalOption] = [
+        .init(minutes: 15,   label: "15 minutes"),
+        .init(minutes: 30,   label: "30 minutes"),
+        .init(minutes: 60,   label: "1 hour"),
+        .init(minutes: 120,  label: "2 hours"),
+        .init(minutes: 240,  label: "4 hours"),
+        .init(minutes: 360,  label: "6 hours"),
+        .init(minutes: 720,  label: "12 hours"),
+        .init(minutes: 1440, label: "24 hours"),
+    ]
+
+    private struct IntervalOption {
+        let minutes: Int
+        let label: String
+    }
+
+    // MARK: - Schedule type
+
+    enum ScheduleType: String, CaseIterable, Identifiable {
+        case atTime     = "atTime"
+        case onInterval = "onInterval"
+
+        var id: String { rawValue }
+
+        var label: String {
+            switch self {
+            case .atTime:     return "At a Time"
+            case .onInterval: return "On an Interval"
+            }
+        }
+    }
+
     // MARK: - Helpers
 
     private func populate() {
         guard let job = existing else { return }
         name   = job.name
         prompt = job.prompt
-        days   = job.scheduleDays
-        let comps     = Calendar.current.dateComponents([.hour, .minute], from: Date())
-        var target    = DateComponents()
-        target.hour   = job.scheduleHour
-        target.minute = job.scheduleMinute
-        time = Calendar.current.date(from: target) ?? time
-        _ = comps // suppress warning
+
+        if let mins = job.intervalMinutes {
+            scheduleType    = .onInterval
+            intervalMinutes = mins
+        } else {
+            scheduleType = .atTime
+            days         = job.scheduleDays
+            var target    = DateComponents()
+            target.hour   = job.scheduleHour
+            target.minute = job.scheduleMinute
+            time = Calendar.current.date(from: target) ?? time
+        }
     }
 
     private func save() {
-        let comps  = Calendar.current.dateComponents([.hour, .minute], from: time)
-        let hour   = comps.hour   ?? 9
-        let minute = comps.minute ?? 0
+        let trimmedName   = name.trimmingCharacters(in: .whitespaces)
+        let trimmedPrompt = prompt.trimmingCharacters(in: .whitespaces)
 
         if var job = existing {
-            job.name           = name.trimmingCharacters(in: .whitespaces)
-            job.prompt         = prompt.trimmingCharacters(in: .whitespaces)
-            job.scheduleHour   = hour
-            job.scheduleMinute = minute
-            job.scheduleDaysRaw = AgentJob.makeDaysRaw(days)
+            job.name   = trimmedName
+            job.prompt = trimmedPrompt
+            if scheduleType == .onInterval {
+                job.intervalMinutes = intervalMinutes
+                job.scheduleHour    = 9   // unused but keep valid
+                job.scheduleMinute  = 0
+                job.scheduleDaysRaw = ""
+            } else {
+                let comps           = Calendar.current.dateComponents([.hour, .minute], from: time)
+                job.scheduleHour    = comps.hour   ?? 9
+                job.scheduleMinute  = comps.minute ?? 0
+                job.scheduleDaysRaw = AgentJob.makeDaysRaw(days)
+                job.intervalMinutes = nil
+            }
             Task {
                 try? await service.saveJob(&job)
                 await MainActor.run { dismiss() }
             }
         } else {
-            var job = AgentJob.make(
-                agentId: agentId,
-                name: name.trimmingCharacters(in: .whitespaces),
-                prompt: prompt.trimmingCharacters(in: .whitespaces),
-                hour: hour,
-                minute: minute,
-                days: days
-            )
+            let job: AgentJob
+            if scheduleType == .onInterval {
+                job = AgentJob.makeInterval(
+                    agentId: agentId,
+                    name: trimmedName,
+                    prompt: trimmedPrompt,
+                    intervalMinutes: intervalMinutes
+                )
+            } else {
+                let comps = Calendar.current.dateComponents([.hour, .minute], from: time)
+                job = AgentJob.make(
+                    agentId: agentId,
+                    name: trimmedName,
+                    prompt: trimmedPrompt,
+                    hour: comps.hour   ?? 9,
+                    minute: comps.minute ?? 0,
+                    days: days
+                )
+            }
+            var mutableJob = job
             Task {
-                try? await service.saveJob(&job)
+                try? await service.saveJob(&mutableJob)
                 await MainActor.run { dismiss() }
             }
         }

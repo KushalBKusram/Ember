@@ -30,50 +30,67 @@ struct SearchDecision {
 
 /// Structured result from analysing a user message for scheduling intent.
 /// Used by AgentConversationViewModel to auto-create AgentJobs from natural language.
+/// Supports both clock-time schedules ("every day at 8am") and interval schedules
+/// ("every 15 minutes", "every hour").
 @Generable
 struct ScheduleIntentResult {
     @Guide(description: """
-        true if the message requests a recurring scheduled task — e.g. contains phrases like
-        "every day", "daily", "every morning", "weekly", "every Monday", "at 8am every day",
-        "remind me each week", "give me a report every night". false for one-off questions.
+        true if the message requests a recurring scheduled task — e.g. phrases like
+        "every day", "daily", "every morning at 8am", "weekly on Mon",
+        "every 15 minutes", "every hour", "every 2 hours", "every 30 min".
+        false for one-off questions or single requests.
         """)
     var hasScheduleIntent: Bool
 
     @Guide(description: """
         Short descriptive name for this job if hasScheduleIntent is true.
-        Examples: "Daily Market Report", "Morning News Digest", "Weekly Portfolio Review".
+        Examples: "Daily Market Report", "Morning News Digest", "Hourly Price Check", "15-Min Update".
         Empty string if hasScheduleIntent is false.
         """)
     var jobName: String
 
     @Guide(description: """
-        The core request re-written as a standalone prompt the agent should execute when the
-        job fires — WITHOUT the scheduling language. The prompt should be self-contained and
-        action-oriented. Examples:
-          User said: "give me a brief report of the top-5 market movers every day at 8am"
-          Prompt:    "Give me a brief report of today's top 5 market movers with percentage
-                      changes and a one-line reason for each move."
+        The core request re-written as a standalone prompt WITHOUT scheduling language.
+        Must be self-contained and action-oriented.
+        Example: "give me a brief report of the top-5 market movers every day at 8am"
+                 → "Give me a brief report of today's top 5 market movers with percentage
+                    changes and a one-line reason for each move."
         Empty string if hasScheduleIntent is false.
         """)
     var jobPrompt: String
 
     @Guide(description: """
-        Hour of day (0–23) to run the job. Parse from the user's message.
-        Examples: "8am" → 8, "9pm" → 21, "noon" → 12. Default to 9 if not mentioned.
+        true when the schedule is interval-based ("every 15 minutes", "every hour",
+        "every 2 hours") rather than a specific clock time ("at 8am", "every morning").
+        false for clock-time schedules.
+        """)
+    var isIntervalBased: Bool
+
+    @Guide(description: """
+        Only used when isIntervalBased is true.
+        The repeat interval in minutes (minimum 15).
+        Examples: "every 15 minutes" → 15, "every 30 minutes" → 30,
+        "every hour" → 60, "every 2 hours" → 120, "every 4 hours" → 240.
+        Use 0 when isIntervalBased is false.
+        """)
+    var intervalMinutes: Int
+
+    @Guide(description: """
+        Only used when isIntervalBased is false.
+        Hour of day (0-23). Parse from message. Default to 9 if not mentioned.
         """)
     var scheduleHour: Int
 
     @Guide(description: """
-        Minute (0–59) to run the job. Parse from the user's message.
-        Example: "8:30am" → 30. Default to 0 if only an hour is mentioned.
+        Only used when isIntervalBased is false.
+        Minute (0-59). Parse from message. Default to 0 if only an hour is given.
         """)
     var scheduleMinute: Int
 
     @Guide(description: """
-        Comma-separated weekday numbers the job should run on.
-        1=Sunday, 2=Monday, 3=Tuesday, 4=Wednesday, 5=Thursday, 6=Friday, 7=Saturday.
-        Use empty string for every day (no specific days mentioned).
-        Example: "weekdays only" → "2,3,4,5,6". "every Monday" → "2".
+        Only used when isIntervalBased is false.
+        Comma-separated weekday numbers. 1=Sun 2=Mon 3=Tue 4=Wed 5=Thu 6=Fri 7=Sat.
+        Empty string means every day.
         """)
     var scheduleDaysString: String
 }

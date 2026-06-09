@@ -226,12 +226,17 @@ final class AgentConversationViewModel {
     /// Checked synchronously before spinning up a `LanguageModelSession` so that
     /// the vast majority of non-scheduling messages never touch the LLM at all.
     private static let schedulingKeywords: [String] = [
+        // Clock-time schedules
         "every day", "every morning", "every night", "every evening", "every week",
         "every month", "every monday", "every tuesday", "every wednesday",
         "every thursday", "every friday", "every saturday", "every sunday",
         "daily", "weekly", "monthly", "each morning", "each night", "each week",
         "each day", "recurring", "remind me each", "remind me every",
         "give me a report", "send me a report", "schedule a",
+        // Interval schedules
+        "every 15", "every 30", "every hour", "every 2 hour", "every 4 hour",
+        "every 6 hour", "every 12 hour", "every 24 hour",
+        "every minute", "each hour", "hourly",
     ]
 
     /// Returns `true` when `text` contains at least one scheduling keyword.
@@ -241,9 +246,9 @@ final class AgentConversationViewModel {
     }
 
     /// Analyses the user's message with a lightweight `LanguageModelSession` to determine
-    /// whether it requests a recurring scheduled task ("give me a report every day at 8am").
-    /// If detected, auto-creates an `AgentJob` and returns a system note string to inject
-    /// into the LLM context so the model naturally acknowledges the job in its reply.
+    /// whether it requests a recurring scheduled task ("give me a report every day at 8am"
+    /// or "check prices every 15 minutes"). If detected, auto-creates an `AgentJob` and
+    /// returns a system note so the model acknowledges the job in its reply.
     /// Returns `nil` if no scheduling intent is found or on any error (best-effort, silent).
     private func detectAndCreateJobIfNeeded(_ text: String) async -> String? {
         // Fast path: skip the LLM round-trip when the message clearly lacks
@@ -254,7 +259,8 @@ final class AgentConversationViewModel {
                 You are a scheduling-intent parser for a personal AI agent app.
                 Analyse the user message and extract any recurring-schedule request.
                 Only set hasScheduleIntent=true when the message clearly describes a repeating
-                schedule — e.g. "every day", "daily", "every morning at 8am", "weekly on Mon".
+                schedule — e.g. "every day", "daily", "every morning at 8am", "weekly on Mon",
+                "every 15 minutes", "every hour", "every 2 hours".
                 A one-off question or single request is NOT a scheduled task.
                 """)
             let result = try await session.respond(
@@ -264,31 +270,37 @@ final class AgentConversationViewModel {
             let intent = result.content
             guard intent.hasScheduleIntent, !intent.jobName.isEmpty else { return nil }
 
-            // Parse weekday set; empty means every day.
-            let daySet = Set(
-                intent.scheduleDaysString
-                    .split(separator: ",")
-                    .compactMap { Int($0.trimmingCharacters(in: .whitespaces)) }
-                    .filter { (1...7).contains($0) }
-            )
-
             // Use the model-cleaned prompt when available; otherwise strip scheduling
             // language from the raw message so the job prompt is self-contained.
-            let corePrompt: String
-            if !intent.jobPrompt.isEmpty {
-                corePrompt = intent.jobPrompt
-            } else {
-                corePrompt = await WebSearchService.shared.stripSchedulingLanguage(text)
-            }
+            let corePrompt: String = !intent.jobPrompt.isEmpty
+                ? intent.jobPrompt
+                : await WebSearchService.shared.stripSchedulingLanguage(text)
 
-            var job = AgentJob.make(
-                agentId: agent.id,
-                name: intent.jobName,
-                prompt: corePrompt,
-                hour:   max(0, min(23, intent.scheduleHour)),
-                minute: max(0, min(59, intent.scheduleMinute)),
-                days:   daySet
-            )
+            // Build the appropriate job type based on what the model detected.
+            var job: AgentJob
+            if intent.isIntervalBased, intent.intervalMinutes >= 15 {
+                job = AgentJob.makeInterval(
+                    agentId: agent.id,
+                    name: intent.jobName,
+                    prompt: corePrompt,
+                    intervalMinutes: intent.intervalMinutes
+                )
+            } else {
+                let daySet = Set(
+                    intent.scheduleDaysString
+                        .split(separator: ",")
+                        .compactMap { Int($0.trimmingCharacters(in: .whitespaces)) }
+                        .filter { (1...7).contains($0) }
+                )
+                job = AgentJob.make(
+                    agentId: agent.id,
+                    name: intent.jobName,
+                    prompt: corePrompt,
+                    hour:   max(0, min(23, intent.scheduleHour)),
+                    minute: max(0, min(59, intent.scheduleMinute)),
+                    days:   daySet
+                )
+            }
             try await AgentService.shared.saveJob(&job)
 
             // Surface a banner in the conversation view.

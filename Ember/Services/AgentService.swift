@@ -68,8 +68,12 @@ actor AgentService {
 
     // MARK: - Notification scheduling
 
-    /// Requests permission (if not yet granted) then schedules one
-    /// `UNCalendarNotificationTrigger` per effective weekday for the job.
+    /// Requests permission (if not yet granted) then schedules the appropriate
+    /// notification trigger for the job:
+    /// - **Interval jobs**: a single `UNTimeIntervalNotificationTrigger` that
+    ///   fires every `intervalMinutes` minutes (minimum 15).
+    /// - **Time-based jobs**: one `UNCalendarNotificationTrigger` per effective
+    ///   weekday, firing at the stored hour:minute.
     func scheduleNotifications(for job: AgentJob) async {
         let center = UNUserNotificationCenter.current()
 
@@ -79,31 +83,51 @@ actor AgentService {
             guard granted else { return }
         }
 
-        for weekday in job.effectiveWeekdays {
-            let content = UNMutableNotificationContent()
-            content.title = job.name
-            content.body = "Your scheduled job is ready to run."
-            content.sound = .default
-            content.userInfo = [
-                "agentId": job.agentId.uuidString,
-                "jobId":   job.id.uuidString
-            ]
+        let content = UNMutableNotificationContent()
+        content.title = job.name
+        content.body  = "Your scheduled job is ready to run."
+        content.sound = .default
+        content.userInfo = [
+            "agentId": job.agentId.uuidString,
+            "jobId":   job.id.uuidString
+        ]
 
-            var components = DateComponents()
-            components.hour    = job.scheduleHour
-            components.minute  = job.scheduleMinute
-            components.weekday = weekday
-
-            let trigger    = UNCalendarNotificationTrigger(dateMatching: components, repeats: true)
-            let identifier = "\(job.notificationBase)-day-\(weekday)"
-            let request    = UNNotificationRequest(identifier: identifier, content: content, trigger: trigger)
+        if let mins = job.intervalMinutes {
+            // Interval-based: single repeating trigger.
+            let trigger = UNTimeIntervalNotificationTrigger(
+                timeInterval: TimeInterval(max(15, mins) * 60),
+                repeats: true
+            )
+            let request = UNNotificationRequest(
+                identifier: job.intervalNotificationId,
+                content: content,
+                trigger: trigger
+            )
             try? await center.add(request)
+        } else {
+            // Calendar-based: one trigger per effective weekday.
+            for weekday in job.effectiveWeekdays {
+                var components    = DateComponents()
+                components.hour   = job.scheduleHour
+                components.minute = job.scheduleMinute
+                components.weekday = weekday
+
+                let trigger    = UNCalendarNotificationTrigger(dateMatching: components, repeats: true)
+                let identifier = "\(job.notificationBase)-day-\(weekday)"
+                let request    = UNNotificationRequest(identifier: identifier, content: content, trigger: trigger)
+                try? await center.add(request)
+            }
         }
     }
 
     func cancelNotifications(for job: AgentJob) {
-        let ids = (1...7).map { "\(job.notificationBase)-day-\($0)" }
-        UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: ids)
+        // Always cancel both possible identifier patterns so that a job
+        // switching from time-based → interval (or vice versa) doesn't
+        // leave stale notifications behind.
+        let calendarIds = (1...7).map { "\(job.notificationBase)-day-\($0)" }
+        let intervalId  = job.intervalNotificationId
+        UNUserNotificationCenter.current()
+            .removePendingNotificationRequests(withIdentifiers: calendarIds + [intervalId])
     }
 
     /// Re-schedules all enabled job notifications — called on launch to repair
