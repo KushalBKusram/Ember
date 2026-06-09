@@ -181,7 +181,8 @@ actor WebSearchService {
                 content: content,
                 sourceTitle: host,
                 sourceIcon: "globe.americas",
-                score: 1.0
+                score: 1.0,
+                isWeb: true
             ))
         }
 

@@ -21,13 +21,16 @@ actor MemoryService {
         2. The assistant's reply may contain calendar events, appointments, schedules, reminders, \
            document excerpts, or web content injected by the system. NONE of that is a \
            personal fact about the user. Ignore the assistant's reply entirely.
-        3. NEVER extract calendar entries, meetings, interviews, or scheduled events.
-        4. NEVER extract general knowledge or AI-generated content.
-        5. NEVER extract uncertain or hedged statements — skip anything containing \
+        3. NEVER extract questions, requests, or queries. A question like "How is AMZN doing?" \
+           or "What is the weather?" tells you nothing permanent about the user. Only extract \
+           clear, declarative statements of fact ("I work at Acme", "I have two kids").
+        4. NEVER extract calendar entries, meetings, interviews, or scheduled events.
+        5. NEVER extract general knowledge or AI-generated content.
+        6. NEVER extract uncertain or hedged statements — skip anything containing \
            words like "might", "maybe", "probably", "I think", "I believe", \
            "possibly", "not sure", "sort of", "kind of".
-        6. Return an empty facts array when the user's message contains nothing \
-           personally memorable or clearly stated.
+        7. Return an empty facts array when the user's message contains nothing \
+           personally memorable or clearly stated as a fact.
         """
 
     private let synthesisInstructions = """

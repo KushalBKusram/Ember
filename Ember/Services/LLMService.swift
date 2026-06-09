@@ -123,17 +123,38 @@ actor LLMService {
                 """)
         }
 
-        if !ragContext.isEmpty {
-            let ragBlock = ragContext.map { result in
-                "[\(result.sourceTitle)] \(result.content)"
-            }.joined(separator: "\n\n")
+        // Split RAG results into personal documents and live web results so
+        // the model receives different instructions for each: personal data is
+        // the user's own ground truth; web results are public and may be imprecise.
+        let personalContext = ragContext.filter { !$0.isWeb }
+        let webContext      = ragContext.filter { $0.isWeb }
+
+        if !personalContext.isEmpty {
+            let block = personalContext.map { "[\($0.sourceTitle)] \($0.content)" }
+                .joined(separator: "\n\n")
             sections.append("""
 
-                --- Personal context retrieved from the user's own data ---
-                \(ragBlock)
+                --- Personal context from the user's own documents ---
+                \(block)
                 --- End of personal context ---
-                This is the user's real, current data. Treat it as ground truth and reference specific details \
-                from it naturally in your answer. Do not say where the information came from unless asked.
+                This is the user's own data. Treat it as accurate and reference \
+                specific details from it directly in your answer. Do not mention \
+                the source unless asked.
+                """)
+        }
+
+        if !webContext.isEmpty {
+            let block = webContext.map { "[\($0.sourceTitle)] \($0.content)" }
+                .joined(separator: "\n\n")
+            sections.append("""
+
+                --- Live web search results ---
+                \(block)
+                --- End of web results ---
+                These are current results from a public web search. Summarise the \
+                relevant points naturally. They may be incomplete or imprecise — \
+                do not present them as certainties. Do not mention that a search \
+                was performed unless asked.
                 """)
         }
 
