@@ -148,13 +148,17 @@ actor LLMService {
                 .joined(separator: "\n\n")
             sections.append("""
 
-                --- Live web search results ---
+                --- Web search results ---
                 \(block)
                 --- End of web results ---
-                These are current results from a public web search. Summarise the \
-                relevant points naturally. They may be incomplete or imprecise — \
-                do not present them as certainties. Do not mention that a search \
-                was performed unless asked.
+                These snippets come from a DuckDuckGo search. They are cached page \
+                excerpts, NOT real-time API data. Critical rules:
+                - For prices, fares, stock quotes, or any numeric data: treat values \
+                  as approximate and potentially stale. Always tell the user the figures \
+                  are indicative and they should verify on the source site before acting.
+                - Do not present numbers (prices, rates, scores) as exact or current facts.
+                - Summarise the overall picture; do not quote specific figures as authoritative.
+                - Do not mention that a search was performed unless the user asks.
                 """)
         }
 
