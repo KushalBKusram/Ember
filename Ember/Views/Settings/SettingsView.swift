@@ -1,7 +1,6 @@
 import SwiftUI
 
 struct SettingsView: View {
-    @AppStorage("memoryEnabled")     private var memoryEnabled     = true
     @AppStorage("appLockEnabled")    private var appLockEnabled    = true
     @AppStorage("webSearchEnabled")  private var webSearchEnabled  = false
 
@@ -14,13 +13,15 @@ struct SettingsView: View {
                 }
 
                 Section {
-                    Toggle(isOn: $memoryEnabled) {
-                        Label("Memory Learning", systemImage: "brain.head.profile")
+                    NavigationLink {
+                        MemoryView()
+                    } label: {
+                        Label("Memory", systemImage: "brain.head.profile")
                     }
                 } header: {
                     Text("Memory")
                 } footer: {
-                    Text("When enabled, Ember learns facts about you from conversations and uses them to personalise future responses. All memory stays on-device.")
+                    Text("Ember can learn facts about you from conversations to personalise responses. Tap to manage settings and see what's been learned.")
                 }
 
                 Section {
