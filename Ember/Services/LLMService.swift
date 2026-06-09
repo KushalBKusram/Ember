@@ -138,10 +138,14 @@ actor LLMService {
         }
 
         if !history.isEmpty {
-            let transcript = history.suffix(20).map { msg in
-                let tag = msg.role == .user ? "<user>" : "<ember>"
-                let end = msg.role == .user ? "</user>" : "</ember>"
-                return "\(tag)\(msg.content)\(end)"
+            // Explicit String types + concatenation (not interpolation) to prevent
+            // Swift's bidirectional type inference from resolving these literals as
+            // GRDB.SQL — which happens because Message.swift imports GRDB and exposes
+            // SQL's ExpressibleByStringInterpolation conformance to the whole module.
+            let transcript: String = history.suffix(20).map { (msg: Message) -> String in
+                let tag: String = msg.role == .user ? "<user>" : "<ember>"
+                let end: String = msg.role == .user ? "</user>" : "</ember>"
+                return tag + msg.content + end
             }.joined(separator: "\n")
             sections.append("""
 
