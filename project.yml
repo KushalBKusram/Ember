@@ -2,28 +2,28 @@ name: Ember
 options:
   bundleIdPrefix: com.kushal
   deploymentTarget:
-    iOS: "26.0"
+    iOS: "27.0"
   developmentLanguage: en
   createIntermediateGroups: true
 
 settings:
   base:
     SWIFT_VERSION: "6.0"
-    IPHONEOS_DEPLOYMENT_TARGET: "26.0"
+    IPHONEOS_DEPLOYMENT_TARGET: "27.0"
     SWIFT_STRICT_CONCURRENCY: complete
 
 targets:
   Ember:
     type: application
     platform: iOS
-    deploymentTarget: "26.0"
+    deploymentTarget: "27.0"
     sources:
       - Ember/
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.kushal.ember
         SWIFT_VERSION: "6.0"
-        IPHONEOS_DEPLOYMENT_TARGET: "26.0"
+        IPHONEOS_DEPLOYMENT_TARGET: "27.0"
         SWIFT_STRICT_CONCURRENCY: complete
         DEVELOPMENT_ASSET_PATHS: '"Ember/Preview Content"'
         ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS: YES
@@ -36,8 +36,6 @@ targets:
         UILaunchScreen: {}
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
-        NSMicrophoneUsageDescription: "Ember uses your microphone for voice input."
-        NSSpeechRecognitionUsageDescription: "Ember uses speech recognition to convert your voice to text."
         NSCalendarsFullAccessUsageDescription: "Ember can read your calendar to answer questions about your schedule."
         NSRemindersFullAccessUsageDescription: "Ember can read your reminders to help manage your tasks."
         NSFaceIDUsageDescription: "Ember uses Face ID to protect your private conversations."
@@ -52,7 +50,7 @@ targets:
   EmberTests:
     type: bundle.unit-test
     platform: iOS
-    deploymentTarget: "26.0"
+    deploymentTarget: "27.0"
     sources:
       - EmberTests/
     dependencies:
@@ -60,7 +58,7 @@ targets:
     settings:
       base:
         SWIFT_VERSION: "6.0"
-        IPHONEOS_DEPLOYMENT_TARGET: "26.0"
+        IPHONEOS_DEPLOYMENT_TARGET: "27.0"
         SWIFT_STRICT_CONCURRENCY: complete
         GENERATE_INFOPLIST_FILE: YES
         PRODUCT_BUNDLE_IDENTIFIER: com.kushal.ember.tests

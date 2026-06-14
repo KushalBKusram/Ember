@@ -20,7 +20,7 @@ actor RAGService {
         try db.saveRAGDocument(&doc)
         try db.deleteRAGChunks(for: doc.id)
 
-        let chunks = makeChunks(from: text)
+        let chunks = Self.makeChunks(from: text)
         for (i, chunkText) in chunks.enumerated() {
             var ragChunk = RAGChunk(documentId: doc.id, content: chunkText, chunkIndex: i)
             if let vec = await embedder.embed(chunkText) {
@@ -40,9 +40,9 @@ actor RAGService {
 
     // MARK: - Notes (user-authored short text)
 
-    /// Index a free-form note. Uses the same chunking + embedding path as files,
-    /// but stores the original text as the first chunk's content so we can later
-    /// load it back into an editor for revision (rather than only delete+recreate).
+    /// Index a free-form note. Uses the same chunking + embedding path as files;
+    /// the original text is recovered for editing via `noteBody(for:)`, which
+    /// reverses the chunk overlap.
     @discardableResult
     func indexNote(title: String, body: String, replacing existing: RAGDocument? = nil) async throws -> RAGDocument {
         let cleanTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -61,7 +61,7 @@ actor RAGService {
             try db.saveRAGDocument(&doc)
         }
 
-        let chunks = makeChunks(from: cleanBody)
+        let chunks = Self.makeChunks(from: cleanBody)
         for (i, chunkText) in chunks.enumerated() {
             var ragChunk = RAGChunk(documentId: doc.id, content: chunkText, chunkIndex: i)
             if let vec = await embedder.embed(chunkText) {
@@ -75,9 +75,9 @@ actor RAGService {
         return doc
     }
 
-    /// Reconstruct the original note text by concatenating chunk contents.
+    /// Reconstruct the original note text from its stored chunks.
     func noteBody(for documentId: UUID) throws -> String {
-        try db.ragChunks(for: documentId).map(\.content).joined(separator: " ")
+        Self.reassembleChunks(try db.ragChunks(for: documentId).map(\.content))
     }
 
     // MARK: - Retrieval
@@ -115,7 +115,7 @@ actor RAGService {
         }
         for (url, text) in fetched {
             let host = url.host ?? "Web"
-            for chunk in makeChunks(from: text) {
+            for chunk in Self.makeChunks(from: text) {
                 if let vec = await embedder.embed(chunk) {
                     candidates.append((chunk, vec, host, "globe"))
                 }
@@ -137,8 +137,12 @@ actor RAGService {
     }
 
     // MARK: - Chunking (512 words, 50-word overlap)
+    //
+    // Pure static pair — `reassembleChunks` is the exact inverse of
+    // `makeChunks`, which keeps the note edit round trip lossless and lets
+    // the property be unit-tested without a database.
 
-    private func makeChunks(from text: String, windowSize: Int = 512, overlap: Int = 50) -> [String] {
+    nonisolated static func makeChunks(from text: String, windowSize: Int = 512, overlap: Int = 50) -> [String] {
         let words = text.split(separator: " ", omittingEmptySubsequences: true).map(String.init)
         guard !words.isEmpty else { return [] }
         var chunks: [String] = []
@@ -150,6 +154,19 @@ actor RAGService {
             start += windowSize - overlap
         }
         return chunks
+    }
+
+    /// Chunks carry a `overlap`-word overlap, so every chunk after the first
+    /// drops its leading words — naively joining would duplicate text at each
+    /// boundary, growing the note every time it is opened and re-saved.
+    nonisolated static func reassembleChunks(_ chunks: [String], overlap: Int = 50) -> String {
+        guard let first = chunks.first else { return "" }
+        let rest = chunks.dropFirst().map { chunk in
+            chunk.split(separator: " ", omittingEmptySubsequences: true)
+                .dropFirst(overlap)
+                .joined(separator: " ")
+        }
+        return ([first] + rest).joined(separator: " ")
     }
 
     // MARK: - MMR (λ = 0.7)

@@ -91,7 +91,12 @@ actor BackgroundJobService {
             relevantMemories = mems.map(\.content)
         }
 
-        let history = (try? db.messages(for: agent.conversationId)) ?? []
+        // Drop the user message just saved above — it goes out as the prompt
+        // itself, so leaving it in history would duplicate it.
+        var history = (try? db.messages(for: agent.conversationId)) ?? []
+        if let last = history.last, last.role == .user, last.content == job.prompt {
+            history.removeLast()
+        }
 
         async let ragFetch      = agent.ragEnabled
             ? RAGService.shared.retrieve(for: job.prompt, webURLs: [])
@@ -204,11 +209,12 @@ actor BackgroundJobService {
         let request               = BGAppRefreshTaskRequest(identifier: Self.taskIdentifier)
         request.earliestBeginDate = soonest
 
-        do {
-            try BGTaskScheduler.shared.submit(request)
-            logger.info("BGAppRefreshTask scheduled — earliest: \(soonest)")
-        } catch {
-            logger.error("Failed to schedule BGAppRefreshTask: \(error.localizedDescription)")
+        BGTaskScheduler.shared.submitTaskRequest(request) { error in
+            if let error {
+                logger.error("Failed to schedule BGAppRefreshTask: \(error.localizedDescription)")
+            } else {
+                logger.info("BGAppRefreshTask scheduled — earliest: \(soonest)")
+            }
         }
     }
 }

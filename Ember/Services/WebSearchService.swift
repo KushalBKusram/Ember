@@ -140,7 +140,7 @@ actor WebSearchService {
 
         var request = URLRequest(url: url, timeoutInterval: 10)
         request.setValue(
-            "Mozilla/5.0 (iPhone; CPU iPhone OS 26_0 like Mac OS X) AppleWebKit/605.1.15",
+            "Mozilla/5.0 (iPhone; CPU iPhone OS 27_0 like Mac OS X) AppleWebKit/605.1.15",
             forHTTPHeaderField: "User-Agent"
         )
         // Required so NetworkGuard (DEBUG) doesn't block this outbound request.

@@ -8,6 +8,9 @@ struct ConversationView: View {
 
     // Image generation
     @State private var showingImagePlayground = false
+    /// True from the moment the wand is tapped until the sheet fully dismisses.
+    /// Drives the loading spinner on the wand button so the user has instant feedback.
+    @State private var isImagePlaygroundLoading = false
 
     // Edit
     @State private var editingMessage: Message?
@@ -34,7 +37,11 @@ struct ConversationView: View {
                 isStreaming: viewModel.isStreaming,
                 onSend: sendMessage,
                 onCancel: viewModel.cancelStreaming,
-                onGenerateImage: { showingImagePlayground = true }
+                onGenerateImage: {
+                    isImagePlaygroundLoading = true
+                    showingImagePlayground = true
+                },
+                isImagePlaygroundLoading: isImagePlaygroundLoading
             )
             .padding(.horizontal)
             .padding(.bottom, 8)
@@ -64,9 +71,16 @@ struct ConversationView: View {
             #endif
         }
         .onAppear { viewModel.startObserving() }
-        .onDisappear { viewModel.stopObserving() }
+        .onDisappear {
+            viewModel.stopObserving()
+        }
         .imagePlaygroundSheet(isPresented: $showingImagePlayground) { url in
             viewModel.saveGeneratedImage(from: url)
+        }
+        .onChange(of: showingImagePlayground) { _, isShowing in
+            // Clear the loading state as soon as the sheet dismisses (whether
+            // the user accepted an image or cancelled).
+            if !isShowing { isImagePlaygroundLoading = false }
         }
         .sheet(item: $editingMessage) { message in
             editSheet(for: message)
@@ -127,7 +141,7 @@ struct ConversationView: View {
             }
             .scrollDismissesKeyboard(.interactively)
             .onChange(of: viewModel.messages.count) { scrollToBottom(proxy: proxy) }
-            .onChange(of: viewModel.streamingContent) { scrollToBottom(proxy: proxy) }
+            .onChange(of: viewModel.displayContent) { scrollToBottom(proxy: proxy) }
             .onChange(of: viewModel.ragSources.count) { scrollToBottom(proxy: proxy) }
         }
     }
@@ -254,7 +268,7 @@ struct ConversationView: View {
             message: Message(
                 conversationId: viewModel.conversation.id,
                 role: .assistant,
-                content: viewModel.streamingContent.isEmpty ? "▋" : viewModel.streamingContent
+                content: viewModel.displayContent.isEmpty ? "▏" : viewModel.displayContent
             ),
             isStreaming: true
         )

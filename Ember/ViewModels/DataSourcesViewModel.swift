@@ -61,7 +61,12 @@ final class DataSourcesViewModel {
     }
 
     func loadNoteBody(for doc: RAGDocument) async -> String {
-        (try? await RAGService.shared.noteBody(for: doc.id)) ?? ""
+        do {
+            return (try await RAGService.shared.noteBody(for: doc.id)) ?? ""
+        } catch {
+            self.error = "Could not load note: \(error.localizedDescription)"
+            return ""
+        }
     }
 
     func deleteDocument(_ doc: RAGDocument) {

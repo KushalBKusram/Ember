@@ -47,7 +47,7 @@ actor LLMService {
         )
 
         return AsyncThrowingStream { continuation in
-            Task {
+            let task = Task {
                 do {
                     let session = LanguageModelSession(instructions: instructions)
                     let stream = session.streamResponse(to: userMessage)
@@ -59,6 +59,10 @@ actor LLMService {
                     continuation.finish(throwing: error)
                 }
             }
+            // Cancel the inference task when the consumer stops iterating
+            // (user tapped Cancel, view disappeared, etc.) so the LLM doesn't
+            // keep running after nobody is listening.
+            continuation.onTermination = { _ in task.cancel() }
         }
     }
 

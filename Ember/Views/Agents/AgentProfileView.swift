@@ -15,6 +15,7 @@ struct AgentProfileView: View {
     @State private var webSearch: Bool
     @State private var calendar: Bool
     @State private var memory: Bool
+    @State private var rag: Bool
 
     private let service = AgentService.shared
     private let db      = AppDatabase.shared
@@ -28,6 +29,7 @@ struct AgentProfileView: View {
         _webSearch   = State(initialValue: agent.webSearchEnabled)
         _calendar    = State(initialValue: agent.calendarEnabled)
         _memory      = State(initialValue: agent.memoryEnabled)
+        _rag         = State(initialValue: agent.ragEnabled)
     }
 
     var body: some View {
@@ -58,6 +60,7 @@ struct AgentProfileView: View {
                 Toggle("Web Search", isOn: $webSearch)
                 Toggle("Calendar", isOn: $calendar)
                 Toggle("Memory", isOn: $memory)
+                Toggle("Knowledge Sources", isOn: $rag)
             } header: { Text("Data Sources") }
               footer: { Text("Controls which context sources this agent can access, independent of global settings.") }
 
@@ -67,8 +70,10 @@ struct AgentProfileView: View {
                     JobRowView(job: job) {
                         editingJob = job
                     } onToggle: {
-                        Task { try? await service.toggleJob(job) }
-                        loadJobs()
+                        Task {
+                            try? await service.toggleJob(job)
+                            loadJobs()
+                        }
                     } onDelete: {
                         Task {
                             try? await service.deleteJob(job)
@@ -114,12 +119,11 @@ struct AgentProfileView: View {
         updated.webSearchEnabled = webSearch
         updated.calendarEnabled  = calendar
         updated.memoryEnabled    = memory
+        updated.ragEnabled       = rag
         Task {
             try? await service.updateAgent(updated)
-            await MainActor.run {
-                agent    = updated
-                isSaving = false
-            }
+            agent    = updated
+            isSaving = false
         }
     }
 

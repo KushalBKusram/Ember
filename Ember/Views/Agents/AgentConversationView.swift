@@ -29,7 +29,7 @@ struct AgentConversationView: View {
                 isStreaming: viewModel.isStreaming,
                 onSend: sendMessage,
                 onCancel: viewModel.cancelStreaming,
-                onGenerateImage: { }   // image gen not available in agent context
+                onGenerateImage: nil   // image gen not available in agent context
             )
             .padding(.horizontal)
             .padding(.bottom, 8)
@@ -62,7 +62,9 @@ struct AgentConversationView: View {
             viewModel.startObserving()
             fireJobTriggerIfNeeded()
         }
-        .onDisappear { viewModel.stopObserving() }
+        .onDisappear {
+            viewModel.stopObserving()
+        }
         .onChange(of: viewModel.newJobBanner) { _, newValue in
             guard newValue != nil else { return }
             Task {
@@ -93,13 +95,25 @@ struct AgentConversationView: View {
                             message: Message(
                                 conversationId: viewModel.conversationId,
                                 role: .assistant,
-                                content: viewModel.streamingContent.isEmpty
-                                    ? "▋" : viewModel.streamingContent
+                                content: viewModel.displayContent.isEmpty
+                                    ? "▏" : viewModel.displayContent
                             ),
                             isStreaming: true
                         )
                         .id("streaming")
                     }
+
+                    if viewModel.wasCancelled && !viewModel.isStreaming {
+                        HStack(spacing: 6) {
+                            Image(systemName: "stop.circle.fill")
+                                .foregroundStyle(.secondary)
+                            Text("Stopped")
+                        }
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .transition(.opacity)
+                    }
+
                     if let error = viewModel.error {
                         errorBanner(error)
                     }
@@ -109,7 +123,7 @@ struct AgentConversationView: View {
             }
             .scrollDismissesKeyboard(.interactively)
             .onChange(of: viewModel.messages.count) { scrollToBottom(proxy: proxy) }
-            .onChange(of: viewModel.streamingContent)  { scrollToBottom(proxy: proxy) }
+            .onChange(of: viewModel.displayContent) { scrollToBottom(proxy: proxy) }
         }
     }
 

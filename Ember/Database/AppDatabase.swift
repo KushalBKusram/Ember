@@ -441,14 +441,6 @@ extension AppDatabase {
         try dbPool.write { db in _ = try agent.delete(db) }
     }
 
-    func touchAgentRunDate(_ agentId: UUID) throws {
-        try dbPool.write { db in
-            try db.execute(
-                sql: "UPDATE agent SET lastRunAt = ? WHERE id = ?",
-                arguments: [Date(), agentId]
-            )
-        }
-    }
 }
 
 // MARK: - AgentJob queries
@@ -484,15 +476,6 @@ extension AppDatabase {
 
     func deleteJob(_ job: AgentJob) throws {
         try dbPool.write { db in _ = try job.delete(db) }
-    }
-
-    func touchJobRunDate(_ jobId: UUID) throws {
-        try dbPool.write { db in
-            try db.execute(
-                sql: "UPDATE agent_job SET lastRunAt = ? WHERE id = ?",
-                arguments: [Date(), jobId]
-            )
-        }
     }
 
     /// Marks both the job and its parent agent as run in a single write transaction.

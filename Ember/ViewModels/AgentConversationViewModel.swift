@@ -10,6 +10,10 @@ private let perfSignposter = OSSignposter(logHandle: .init(subsystem: "com.kusha
 final class AgentConversationViewModel {
     var messages: [Message]   = []
     var streamingContent      = ""
+    /// Character-by-character view of the in-progress response.
+    /// The view binds to this instead of `streamingContent` so text types out
+    /// smoothly rather than arriving in large dumps.
+    var displayContent        = ""
     var isStreaming            = false
     var wasCancelled           = false
     var error: String?
@@ -24,6 +28,10 @@ final class AgentConversationViewModel {
     private let llm            = LLMService.shared
     private var observationTask: Task<Void, Never>?
     private var streamingTask:   Task<Void, Never>?
+    /// Buffer between LLM delivery and the display layer.
+    private var charQueue: [Character] = []
+    /// Task that drains `charQueue` → `displayContent` at a human-readable pace.
+    private var dripTask: Task<Void, Never>?
 
     var isModelAvailable: Bool { llm.isModelAvailable }
     var conversationId: UUID   { agent.conversationId }
@@ -64,12 +72,42 @@ final class AgentConversationViewModel {
     func cancelStreaming() {
         streamingTask?.cancel()
         streamingTask = nil
+        dripTask?.cancel()
+        dripTask = nil
+        charQueue = []
         if !streamingContent.isEmpty {
             wasCancelled = true
             finalizeStream()
         }
         isStreaming      = false
         streamingContent = ""
+        displayContent   = ""
+    }
+
+    // MARK: - Character drip
+
+    /// Drains `charQueue` → `displayContent` one character at a time.
+    /// Adaptive speed: slow for small backlogs (natural feel), faster when
+    /// the model outruns the display.
+    private func startDrip() {
+        dripTask?.cancel()
+        dripTask = Task { [weak self] in
+            while !Task.isCancelled {
+                guard let self else { break }
+                guard !self.charQueue.isEmpty else {
+                    if !self.isStreaming { break }
+                    try? await Task.sleep(nanoseconds: 8_000_000)  // 8 ms idle poll
+                    continue
+                }
+                let ch = self.charQueue.removeFirst()
+                self.displayContent.append(ch)
+                let backlog = self.charQueue.count
+                let ns: UInt64 = backlog < 20  ? 12_000_000   // 12 ms — natural typing
+                               : backlog < 80  ?  6_000_000   //  6 ms — catching up
+                               :                   3_000_000  //  3 ms — sprint
+                try? await Task.sleep(nanoseconds: ns)
+            }
+        }
     }
 
     // MARK: - Job trigger (auto-send from notification or "Run Now")
@@ -157,12 +195,21 @@ final class AgentConversationViewModel {
         // ── Stream ────────────────────────────────────────────────────────────
         isStreaming      = true
         streamingContent = ""
+        displayContent   = ""
+        charQueue        = []
+        startDrip()
 
-        let history = messages
-            .filter { $0.role == .user || $0.role == .assistant }
-            .filter { $0.attachmentPath == nil }
+        // Read history from the DB rather than the observation array, which may
+        // not yet include the user message saved above. Then drop that message —
+        // it's sent as the prompt itself and shouldn't appear twice.
+        var history = ((try? db.messages(for: agent.conversationId)) ?? messages)
+            .filter { ($0.role == .user || $0.role == .assistant) && $0.attachmentPath == nil }
+        if let last = history.last, last.role == .user, last.content == text {
+            history.removeLast()
+        }
 
         var firstToken = false
+        var prevLen    = 0   // tracks how many chars of the cumulative chunk we've queued
         do {
             let stream = await llm.streamResponse(
                 to: text,
@@ -180,6 +227,11 @@ final class AgentConversationViewModel {
                     perfSignposter.endInterval("agent.send→firstToken", sendState)
                     firstToken = true
                 }
+                // `chunk` is cumulative — enqueue only the newly arrived characters.
+                if chunk.count > prevLen {
+                    charQueue.append(contentsOf: chunk.dropFirst(prevLen))
+                    prevLen = chunk.count
+                }
                 streamingContent = chunk
             }
         } catch {
@@ -190,23 +242,42 @@ final class AgentConversationViewModel {
 
         if !firstToken { perfSignposter.endInterval("agent.send→firstToken", sendState) }
 
-        if !Task.isCancelled, !streamingContent.isEmpty {
-            finalizeStream()
-            // Background memory extraction — same pipeline as regular conversations.
-            let convId = agent.conversationId
-            Task.detached(priority: .background) {
-                let db   = AppDatabase.shared
-                let msgs = (try? db.messages(for: convId)) ?? []
-                guard let lastUser      = msgs.last(where: { $0.role == .user }),
-                      let lastAssistant = msgs.last(where: { $0.role == .assistant }) else { return }
-                await MemoryService.shared.processExchange(
-                    userMessage: lastUser,
-                    assistantMessage: lastAssistant
-                )
+        // Stop the background drip and drain the tail inline so `isStreaming`
+        // stays true (cursor visible) until every character is displayed.
+        dripTask?.cancel()
+        dripTask = nil
+        if !Task.isCancelled {
+            if charQueue.count <= 40 {
+                while !charQueue.isEmpty {
+                    displayContent.append(charQueue.removeFirst())
+                    try? await Task.sleep(nanoseconds: 3_000_000)  // 3 ms
+                }
+            } else {
+                displayContent.append(contentsOf: charQueue)
+                charQueue = []
             }
         }
 
-        isStreaming = false
+        if !Task.isCancelled, !streamingContent.isEmpty {
+            finalizeStream()
+            // Background memory extraction — gated on the agent's memory flag.
+            if agent.memoryEnabled {
+                let convId = agent.conversationId
+                Task.detached(priority: .background) {
+                    let db   = AppDatabase.shared
+                    let msgs = (try? db.messages(for: convId)) ?? []
+                    guard let lastUser      = msgs.last(where: { $0.role == .user }),
+                          let lastAssistant = msgs.last(where: { $0.role == .assistant }) else { return }
+                    await MemoryService.shared.processExchange(
+                        userMessage: lastUser,
+                        assistantMessage: lastAssistant
+                    )
+                }
+            }
+        }
+
+        isStreaming    = false
+        displayContent = ""   // streaming bubble gone; DB message takes over
     }
 
     private func finalizeStream() {

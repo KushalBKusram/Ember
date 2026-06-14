@@ -24,18 +24,10 @@
 	<string>Ember can read your calendar to answer questions about your schedule.</string>
 	<key>NSFaceIDUsageDescription</key>
 	<string>Ember uses Face ID to protect your private conversations.</string>
-	<key>NSMicrophoneUsageDescription</key>
-	<string>Ember uses your microphone for voice input.</string>
 	<key>NSRemindersFullAccessUsageDescription</key>
 	<string>Ember can read your reminders to help manage your tasks.</string>
-	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>Ember uses speech recognition to convert your voice to text.</string>
 	<key>NSUserNotificationUsageDescription</key>
-	<string>Ember uses notifications to deliver scheduled agent results and alert you when a job is ready.</string>
-	<key>BGTaskSchedulerPermittedIdentifiers</key>
-	<array>
-		<string>com.kushal.ember.job-runner</string>
-	</array>
+	<string>Ember uses notifications to alert you when a scheduled agent job is ready to run.</string>
 	<key>UILaunchScreen</key>
 	<dict/>
 	<key>UISupportedInterfaceOrientations</key>

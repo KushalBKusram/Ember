@@ -31,6 +31,13 @@ struct EmberApp: App {
             nonisolated(unsafe) let sendableTask = refreshTask
             Task { await BackgroundJobService.shared.handleRefreshTask(sendableTask) }
         }
+        // Repair pass: pending notifications don't survive a reinstall or a
+        // device restore, and BGAppRefreshTask requests don't survive a force
+        // quit — re-arm both from the persisted job set. No-op when no jobs.
+        Task {
+            try? await AgentService.shared.rescheduleAllIfNeeded()
+            await BackgroundJobService.shared.scheduleNextRefresh()
+        }
         #if DEBUG
         NetworkGuard.arm()
         #endif

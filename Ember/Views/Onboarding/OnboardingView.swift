@@ -1,6 +1,4 @@
 import SwiftUI
-import AVFoundation
-import Speech
 import EventKit
 
 // MARK: - Root
@@ -150,8 +148,6 @@ private struct PermissionsPage: View {
                 .padding(.bottom, 48)
 
             VStack(alignment: .leading, spacing: 28) {
-                permissionRow(icon: "mic.fill",      color: .purple, title: "Microphone & Speech",
-                              benefit: "Talk to Ember using your voice")
                 permissionRow(icon: "calendar",      color: .red,    title: "Calendar",
                               benefit: "Know what's on your schedule")
                 permissionRow(icon: "checklist",     color: .blue,   title: "Reminders",
@@ -217,19 +213,15 @@ private struct PermissionsPage: View {
 // same reason: callback EventKit uses plain GCD, which has no such restriction.
 
 private func requestSystemPermissions() async {
-    // Microphone
-    _ = await AVAudioApplication.requestRecordPermission()
-
-    // Speech recognition
-    await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
-        SFSpeechRecognizer.requestAuthorization { _ in cont.resume() }
-    }
+    // Single store instance shared across both requests — EventKit recommends
+    // one EKEventStore per app; creating two is wasteful and can cause
+    // unnecessary authorization prompts on some iOS versions.
+    let store = EKEventStore()
 
     // Calendar — callback form sidesteps unsafeForcedSync in EventKit async.
     // If the user grants access, enable the toggle so RAGService fetches events.
     await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
-        let store = EKEventStore()
-        store.requestAccess(to: .event) { granted, _ in
+        store.requestFullAccessToEvents { granted, _ in
             if granted { AppSettings.calendarEnabled = true }
             cont.resume()
         }
@@ -237,8 +229,7 @@ private func requestSystemPermissions() async {
 
     // Reminders — same
     await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
-        let store = EKEventStore()
-        store.requestAccess(to: .reminder) { granted, _ in
+        store.requestFullAccessToReminders { granted, _ in
             if granted { AppSettings.remindersEnabled = true }
             cont.resume()
         }
@@ -305,67 +296,70 @@ private struct IdentityPage: View {
         """
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 0) {
-                VStack(spacing: 8) {
-                    Image(systemName: "person.crop.circle.fill")
-                        .font(.system(size: 56))
-                        .foregroundStyle(.orange)
-                        .padding(.top, 52)
-                        .padding(.bottom, 8)
+        GeometryReader { proxy in
+            ScrollView {
+                VStack(spacing: 0) {
+                    VStack(spacing: 8) {
+                        Image(systemName: "person.crop.circle.fill")
+                            .font(.system(size: 56))
+                            .foregroundStyle(.orange)
+                            .padding(.top, 52)
+                            .padding(.bottom, 8)
 
-                    Text("Tell Ember About You")
-                        .font(.system(size: 28, weight: .bold, design: .rounded))
+                        Text("Tell Ember About You")
+                            .font(.system(size: 28, weight: .bold, design: .rounded))
 
-                    Text("The more you share, the better Ember knows you from day one.")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal, 36)
-                }
-                .padding(.bottom, 24)
-
-                ZStack(alignment: .topLeading) {
-                    Color.clear
-                        .glassEffect(in: RoundedRectangle(cornerRadius: 16))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 16)
-                                .strokeBorder(isFocused ? Color.orange.opacity(0.5) : Color.clear, lineWidth: 1.5)
-                        )
-
-                    if identityText.isEmpty {
-                        Text(placeholder)
-                            .font(.body)
-                            .foregroundStyle(Color(.tertiaryLabel))
-                            .padding(16)
-                            .allowsHitTesting(false)
+                        Text("The more you share, the better Ember knows you from day one.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 36)
                     }
+                    .padding(.bottom, 24)
 
-                    TextEditor(text: $identityText)
-                        .font(.body)
-                        .focused($isFocused)
-                        .padding(12)
-                        .scrollContentBackground(.hidden)
+                    ZStack(alignment: .topLeading) {
+                        Color.clear
+                            .glassEffect(in: RoundedRectangle(cornerRadius: 16))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 16)
+                                    .strokeBorder(isFocused ? Color.orange.opacity(0.5) : Color.clear, lineWidth: 1.5)
+                            )
+
+                        if identityText.isEmpty {
+                            Text(placeholder)
+                                .font(.body)
+                                .foregroundStyle(Color(.tertiaryLabel))
+                                .padding(16)
+                                .allowsHitTesting(false)
+                        }
+
+                        TextEditor(text: $identityText)
+                            .font(.body)
+                            .focused($isFocused)
+                            .padding(12)
+                            .scrollContentBackground(.hidden)
+                    }
+                    .frame(minHeight: 180)
+                    .padding(.horizontal, 24)
+                    .onTapGesture { isFocused = true }
+
+                    VStack(spacing: 14) {
+                        Button("Get Started") { complete() }
+                            .buttonStyle(PrimaryButtonStyle())
+                            .padding(.horizontal, 32)
+
+                        Button("Skip") { completeEmpty() }
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.top, 32)
+                    .padding(.bottom, 52)
                 }
-                .frame(minHeight: 180)
-                .padding(.horizontal, 24)
-                .onTapGesture { isFocused = true }
-
-                VStack(spacing: 14) {
-                    Button("Get Started") { complete() }
-                        .buttonStyle(PrimaryButtonStyle())
-                        .padding(.horizontal, 32)
-
-                    Button("Skip") { completeEmpty() }
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-                .padding(.top, 32)
-                .padding(.bottom, 52)
+                // Use container-relative height instead of deprecated UIScreen.main.bounds
+                .frame(minHeight: proxy.size.height * 0.7)
             }
-            .frame(minHeight: UIScreen.main.bounds.height * 0.7)
+            .scrollDismissesKeyboard(.interactively)
         }
-        .scrollDismissesKeyboard(.interactively)
     }
 
     private func complete() {

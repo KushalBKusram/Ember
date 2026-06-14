@@ -22,7 +22,7 @@ actor WebFetchService {
     func fetchText(from url: URL) async throws -> String {
         var request = URLRequest(url: url, timeoutInterval: 15)
         request.setValue(
-            "Mozilla/5.0 (iPhone; CPU iPhone OS 26_0 like Mac OS X) AppleWebKit/605.1.15",
+            "Mozilla/5.0 (iPhone; CPU iPhone OS 27_0 like Mac OS X) AppleWebKit/605.1.15",
             forHTTPHeaderField: "User-Agent"
         )
         // Marker the DEBUG NetworkGuard uses to whitelist intentional traffic.

@@ -125,6 +125,7 @@ struct ConversationListView: View {
                         try? viewModel.rename(conversation, to: renameText.trimmingCharacters(in: .whitespacesAndNewlines))
                         renameTarget = nil
                     }
+                    .disabled(renameText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { renameTarget = nil }

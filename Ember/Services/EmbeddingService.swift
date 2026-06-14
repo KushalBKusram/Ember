@@ -25,7 +25,7 @@ actor EmbeddingService {
 
     /// Skip the cache lookup. Used by indexing paths where the content is
     /// being hashed and saved anyway.
-    func embedUncached(_ text: String) -> [Float]? {
+    private func embedUncached(_ text: String) -> [Float]? {
         guard let emb = embedding(),
               let vector = emb.vector(for: text) else { return nil }
         return vector.map { Float($0) }

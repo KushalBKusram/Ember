@@ -110,7 +110,13 @@ actor MemoryService {
         // Episodic memories are transient (TTL 30 days) — exclude from the standing
         // profile so temporary events don't define who the user is permanently.
         let profileWorthy = enabled.filter { $0.category != .episodic }
-        guard !profileWorthy.isEmpty else { return }
+        guard !profileWorthy.isEmpty else {
+            // Nothing left to build a profile from (user deleted or disabled
+            // every fact) — clear the old paragraph too, or it would keep
+            // describing the user in every future conversation.
+            AppSettings.userProfile = ""
+            return
+        }
 
         let byCategory = Dictionary(grouping: profileWorthy, by: \.category)
         var categoryBlocks: [String] = []
@@ -186,7 +192,6 @@ actor MemoryService {
     /// same batch do not collide against stale data.
     ///
     /// - Returns: `true` if at least one new fact was persisted (used to gate profile re-synthesis).
-    @discardableResult
     private func absorbFacts(
         _ facts: [ExtractedFact],
         into knownMemories: inout [Memory],

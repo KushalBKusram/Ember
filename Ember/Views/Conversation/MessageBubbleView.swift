@@ -28,12 +28,14 @@ struct MessageBubbleView: View {
                 }
             }
 
-            if isUser {
-                Button { onEdit?() } label: {
+            // Only offer actions a handler was provided for — agent
+            // conversations pass neither, so they get no dead menu items.
+            if isUser, let onEdit {
+                Button(action: onEdit) {
                     Label("Edit", systemImage: "pencil")
                 }
-            } else if !isStreaming {
-                Button { onRegenerate?() } label: {
+            } else if !isUser, !isStreaming, let onRegenerate {
+                Button(action: onRegenerate) {
                     Label("Regenerate", systemImage: "arrow.clockwise")
                 }
             }
@@ -83,15 +85,22 @@ struct MessageBubbleView: View {
                     .scaledToFit()
                     .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                     .frame(maxWidth: 260)
+                    .transition(.opacity.combined(with: .scale(scale: 0.97)))
             case .failure:
                 Label("Image unavailable", systemImage: "photo")
                     .foregroundStyle(.secondary)
                     .padding()
             default:
-                ProgressView()
-                    .frame(width: 120, height: 120)
+                // Placeholder sized to match typical square generated images.
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(Color.secondary.opacity(0.12))
+                    .frame(width: 200, height: 200)
+                    .overlay {
+                        ProgressView()
+                    }
             }
         }
+        .animation(.easeOut(duration: 0.3), value: url)
     }
 
     private var timestamp: some View {

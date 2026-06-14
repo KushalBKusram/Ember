@@ -10,6 +10,10 @@ private let perfSignposter = OSSignposter(logHandle: .init(subsystem: "com.kusha
 final class ConversationViewModel {
     var messages: [Message] = []
     var streamingContent = ""
+    /// Character-by-character view of the in-progress response.
+    /// The view shows this instead of `streamingContent` so text appears to
+    /// type out smoothly rather than arriving in large dumps.
+    var displayContent = ""
     var isStreaming = false
     var wasCancelled = false
     var error: String?
@@ -27,6 +31,10 @@ final class ConversationViewModel {
     private let llm = LLMService.shared
     private var observationTask: Task<Void, Never>?
     private var streamingTask: Task<Void, Never>?
+    /// Buffer between LLM delivery and the display layer.
+    private var charQueue: [Character] = []
+    /// Task that drains `charQueue` → `displayContent` at a human-readable pace.
+    private var dripTask: Task<Void, Never>?
 
     var isModelAvailable: Bool { llm.isModelAvailable }
 
@@ -64,17 +72,45 @@ final class ConversationViewModel {
     func cancelStreaming() {
         streamingTask?.cancel()
         streamingTask = nil
+        dripTask?.cancel()
+        dripTask = nil
+        charQueue = []
         if !streamingContent.isEmpty {
             wasCancelled = true
             finalizeStream()
         }
         isStreaming = false
         streamingContent = ""
+        displayContent = ""
     }
 
-    /// Mark the most recent assistant message as having been cancelled.
-    /// Cleared after the next send.
-    func clearCancelFlag() { wasCancelled = false }
+    // MARK: - Character drip
+
+    /// Starts a task that drains `charQueue` → `displayContent` one character at a
+    /// time. Speed is adaptive: slow when the backlog is short (feels like natural
+    /// typing), faster when the model outruns the display so the user never waits.
+    private func startDrip() {
+        dripTask?.cancel()
+        dripTask = Task { [weak self] in
+            while !Task.isCancelled {
+                guard let self else { break }
+                guard !self.charQueue.isEmpty else {
+                    if !self.isStreaming { break }
+                    try? await Task.sleep(nanoseconds: 8_000_000)  // 8 ms idle poll
+                    continue
+                }
+                let ch = self.charQueue.removeFirst()
+                self.displayContent.append(ch)
+                // Adaptive interval: slow for small backlogs (visible character-by-character
+                // feel), faster for larger ones so we keep pace with a fast model.
+                let backlog = self.charQueue.count
+                let ns: UInt64 = backlog < 20  ? 12_000_000   // 12 ms — natural typing
+                               : backlog < 80  ?  6_000_000   //  6 ms — catching up
+                               :                   3_000_000  //  3 ms — sprint
+                try? await Task.sleep(nanoseconds: ns)
+            }
+        }
+    }
 
     // MARK: - Image messages
 
@@ -138,11 +174,6 @@ final class ConversationViewModel {
     // MARK: - Private send
 
     private func performSend(_ text: String) async {
-        error = nil
-        wasCancelled = false
-        injectedMemoryCount = 0
-        ragSources = []
-
         var userMsg = Message(conversationId: conversation.id, role: .user, content: text)
         do {
             try db.save(&userMsg)
@@ -157,6 +188,12 @@ final class ConversationViewModel {
 
     // Sends text to the LLM without saving a new user message (used by regen/edit)
     private func performSendText(_ text: String) async {
+        // Reset here, not in performSend, so regenerate/edit also clear any
+        // stale error banner, "Stopped" indicator, or source chips.
+        error = nil
+        wasCancelled = false
+        injectedMemoryCount = 0
+        ragSources = []
         #if DEBUG
         lastDebugContext = ""
         #endif
@@ -226,11 +263,23 @@ final class ConversationViewModel {
 
         isStreaming = true
         streamingContent = ""
+        displayContent = ""
+        charQueue = []
+        startDrip()
 
-        let history = messages.filter { $0.role == .user || $0.role == .assistant }
-            .filter { $0.attachmentPath == nil }
+        // Read history from the DB, not the observation array — after regen/edit
+        // the deletions are committed but `messages` may not have caught up yet,
+        // which would leak the just-deleted reply back into the prompt.
+        var history = ((try? db.messages(for: conversation.id)) ?? messages)
+            .filter { ($0.role == .user || $0.role == .assistant) && $0.attachmentPath == nil }
+        // The current question is sent as the prompt itself — drop it from the
+        // history block so the model doesn't see it twice.
+        if let last = history.last, last.role == .user, last.content == text {
+            history.removeLast()
+        }
 
         var firstTokenReceived = false
+        var prevLen = 0   // tracks how many chars of the cumulative chunk we've already queued
         do {
             let stream = await llm.streamResponse(
                 to: text,
@@ -246,11 +295,35 @@ final class ConversationViewModel {
                     perfSignposter.endInterval("send→firstToken", sendState)
                     firstTokenReceived = true
                 }
+                // `chunk` is cumulative — enqueue only the newly arrived characters.
+                if chunk.count > prevLen {
+                    charQueue.append(contentsOf: chunk.dropFirst(prevLen))
+                    prevLen = chunk.count
+                }
                 streamingContent = chunk
             }
         } catch {
             if !Task.isCancelled {
                 self.error = "Model unavailable. Make sure Apple Intelligence is enabled in Settings."
+            }
+        }
+
+        // Stop the background drip and drain whatever remains inline so that
+        // `isStreaming` stays true (cursor visible) until every char is shown.
+        dripTask?.cancel()
+        dripTask = nil
+        if !Task.isCancelled {
+            if charQueue.count <= 40 {
+                // Short tail: finish character-by-character for a smooth ending.
+                while !charQueue.isEmpty {
+                    displayContent.append(charQueue.removeFirst())
+                    try? await Task.sleep(nanoseconds: 3_000_000)  // 3 ms
+                }
+            } else {
+                // Large backlog (model was very fast): dump at once to avoid
+                // extending the perceived wait beyond what the model already took.
+                displayContent.append(contentsOf: charQueue)
+                charQueue = []
             }
         }
 
@@ -267,6 +340,7 @@ final class ConversationViewModel {
         }
 
         isStreaming = false
+        displayContent = ""   // streaming bubble gone; DB message takes over
     }
 
     private func finalizeStream() {
