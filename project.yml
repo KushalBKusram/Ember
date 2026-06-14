@@ -2,28 +2,28 @@ name: Ember
 options:
   bundleIdPrefix: com.kushal
   deploymentTarget:
-    iOS: "27.0"
+    iOS: "26.0"
   developmentLanguage: en
   createIntermediateGroups: true
 
 settings:
   base:
     SWIFT_VERSION: "6.0"
-    IPHONEOS_DEPLOYMENT_TARGET: "27.0"
+    IPHONEOS_DEPLOYMENT_TARGET: "26.0"
     SWIFT_STRICT_CONCURRENCY: complete
 
 targets:
   Ember:
     type: application
     platform: iOS
-    deploymentTarget: "27.0"
+    deploymentTarget: "26.0"
     sources:
       - Ember/
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.kushal.ember
         SWIFT_VERSION: "6.0"
-        IPHONEOS_DEPLOYMENT_TARGET: "27.0"
+        IPHONEOS_DEPLOYMENT_TARGET: "26.0"
         SWIFT_STRICT_CONCURRENCY: complete
         DEVELOPMENT_ASSET_PATHS: '"Ember/Preview Content"'
         ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS: YES
@@ -50,7 +50,7 @@ targets:
   EmberTests:
     type: bundle.unit-test
     platform: iOS
-    deploymentTarget: "27.0"
+    deploymentTarget: "26.0"
     sources:
       - EmberTests/
     dependencies:
@@ -58,7 +58,7 @@ targets:
     settings:
       base:
         SWIFT_VERSION: "6.0"
-        IPHONEOS_DEPLOYMENT_TARGET: "27.0"
+        IPHONEOS_DEPLOYMENT_TARGET: "26.0"
         SWIFT_STRICT_CONCURRENCY: complete
         GENERATE_INFOPLIST_FILE: YES
         PRODUCT_BUNDLE_IDENTIFIER: com.kushal.ember.tests
