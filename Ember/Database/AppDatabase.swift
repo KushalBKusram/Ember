@@ -6,6 +6,10 @@ final class AppDatabase: Sendable {
     // unencrypted data from older builds. v2 = NSFileProtectionComplete migration.
     private static let storageVersionKey = "emberStorageVersion"
     private static let currentStorageVersion = 2
+    // Tracks whether NSFileProtectionCompleteUnlessOpen has been stamped on the
+    // DB files. Separate from storageVersionKey so a quarantine (which resets
+    // this flag) doesn't trigger a data-wipe on the fresh replacement DB.
+    private static let fileProtectionVersionKey = "emberFileProtectionVersion"
 
     static let shared: AppDatabase = {
         do {
@@ -40,6 +44,8 @@ final class AppDatabase: Sendable {
                 .appendingPathExtension("broken-\(stamp).sqlite\(ext)")
             try? fm.moveItem(at: original, to: quarantined)
         }
+        // Clear so the replacement DB gets file-protection applied fresh.
+        UserDefaults.standard.removeObject(forKey: fileProtectionVersionKey)
         // Surface to telemetry-equivalent: NSLog so it lands in Console.app.
         NSLog("[Ember] Database quarantined due to: \(reason)")
     }
@@ -87,6 +93,8 @@ final class AppDatabase: Sendable {
     }
 
     private static func applyFileProtection(at path: String) throws {
+        let defaults = UserDefaults.standard
+        guard defaults.integer(forKey: fileProtectionVersionKey) < currentStorageVersion else { return }
         let fm = FileManager.default
         for ext in ["", "-wal", "-shm"] {
             let p = path + ext
@@ -96,6 +104,7 @@ final class AppDatabase: Sendable {
                 ofItemAtPath: p
             )
         }
+        defaults.set(currentStorageVersion, forKey: fileProtectionVersionKey)
     }
 
     private func migrate() throws {

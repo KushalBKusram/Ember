@@ -20,7 +20,7 @@ actor WebFetchService {
     // MARK: - Fetch
 
     func fetchText(from url: URL) async throws -> String {
-        var request = URLRequest(url: url, timeoutInterval: 15)
+        var request = URLRequest(url: url, timeoutInterval: 10)
         request.setValue(
             "Mozilla/5.0 (iPhone; CPU iPhone OS 27_0 like Mac OS X) AppleWebKit/605.1.15",
             forHTTPHeaderField: "User-Agent"

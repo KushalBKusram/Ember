@@ -1,11 +1,34 @@
 import Foundation
 import UserNotifications
 
+/// Parsed routing decision from a notification's `userInfo` payload.
+enum NotificationRouting: Equatable {
+    /// Result-ready: job ran in the background — open the agent conversation without re-triggering.
+    case openAgent(UUID)
+    /// Tap-to-run: job hasn't run yet — navigate to the agent and trigger the job.
+    case triggerJob(agentId: UUID, jobId: UUID)
+}
+
 /// UNUserNotificationCenter delegate. Set as delegate in EmberApp.init().
 /// Extracts agentId + jobId from notification payloads and routes them
 /// to AgentNavigationState so the Agents tab can navigate + auto-trigger.
 final class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate, Sendable {
     static let shared = NotificationDelegate()
+
+    /// Pure parsing helper — converts raw `userInfo` to a typed routing decision.
+    /// Extracted so it can be unit-tested without constructing a UNNotificationResponse.
+    static func routing(from userInfo: [AnyHashable: Any]) -> NotificationRouting? {
+        guard let agentStr = userInfo["agentId"] as? String,
+              let agentId  = UUID(uuidString: agentStr) else { return nil }
+        if let isResult = userInfo["isResult"] as? String, isResult == "1" {
+            return .openAgent(agentId)
+        }
+        if let jobStr = userInfo["jobId"] as? String,
+           let jobId  = UUID(uuidString: jobStr) {
+            return .triggerJob(agentId: agentId, jobId: jobId)
+        }
+        return nil
+    }
 
     // Called when the user taps a notification (app in background or killed).
     func userNotificationCenter(
@@ -13,24 +36,13 @@ final class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate, Se
         didReceive response: UNNotificationResponse,
         withCompletionHandler completionHandler: @escaping () -> Void
     ) {
-        let info = response.notification.request.content.userInfo
-
-        if let agentStr = info["agentId"] as? String,
-           let agentId  = UUID(uuidString: agentStr) {
-
-            if let isResult = info["isResult"] as? String, isResult == "1" {
-                // Result-ready notification: job already ran in the background.
-                // Just navigate to the agent conversation — don't re-trigger the job.
-                Task { @MainActor in
-                    AgentNavigationState.shared.pendingOpen = agentId
-                }
-            } else if let jobStr = info["jobId"] as? String,
-                      let jobId  = UUID(uuidString: jobStr) {
-                // Legacy tap-to-run notification: navigate and trigger the job.
-                Task { @MainActor in
-                    AgentNavigationState.shared.pendingTrigger = (agentId: agentId, jobId: jobId)
-                }
-            }
+        switch Self.routing(from: response.notification.request.content.userInfo) {
+        case .openAgent(let agentId):
+            Task { @MainActor in AgentNavigationState.shared.pendingOpen = agentId }
+        case .triggerJob(let agentId, let jobId):
+            Task { @MainActor in AgentNavigationState.shared.pendingTrigger = (agentId: agentId, jobId: jobId) }
+        case nil:
+            break
         }
         completionHandler()
     }

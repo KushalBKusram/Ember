@@ -1,6 +1,24 @@
 import FoundationModels
 
-// MARK: - Supersession check
+// MARK: - Batch supersession check
+
+/// Returned by a single LLM call that evaluates multiple (A, B) pairs at once,
+/// replacing N sequential `SupersessionDecision` sessions with one.
+@Generable
+struct BatchSupersessionDecision {
+    @Guide(
+        description: """
+            One boolean per pair in the same order as given in the prompt. \
+            true = B supersedes or corrects A (A is no longer valid given B). \
+            false = A and B can both be true simultaneously, or the pairs describe different things.
+            """,
+        .minimumCount(0),
+        .maximumCount(8)
+    )
+    var results: [Bool]
+}
+
+// MARK: - Supersession check (single pair, kept for reference)
 
 /// Used to decide whether a newly extracted fact should replace an existing one.
 @Generable

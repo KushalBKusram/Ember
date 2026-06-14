@@ -77,24 +77,28 @@ actor MemoryService {
         return await embedder.rankMemories(memories, for: query, limit: limit)
     }
 
-    // MARK: - Supersession check
+    // MARK: - Batch supersession check
 
-    /// Returns true when the LLM determines that `newFact` corrects or contradicts
-    /// `existing`. Defaults to false on any failure — never silently deletes without
-    /// a confirmed decision.
-    private func checkSupersession(newFact: String, against existing: Memory) async -> Bool {
+    /// Evaluates multiple (existing, new) pairs in a single LLM session rather than
+    /// N sequential sessions. Pads with `false` if the model returns fewer decisions
+    /// than pairs — we never silently delete without a confirmed supersession.
+    private func batchCheckSupersession(_ pairs: [(newFact: String, existing: Memory)]) async -> [Bool] {
+        guard !pairs.isEmpty else { return [] }
+        let list = pairs.enumerated().map { i, p in
+            "Pair \(i + 1):\n  Existing (A): \(p.existing.content)\n  New (B): \(p.newFact)"
+        }.joined(separator: "\n\n")
         let session = LanguageModelSession(instructions: """
-            You decide whether a new personal fact (B) supersedes an existing one (A).
-            Answer true only when B directly corrects, contradicts, or makes A obsolete.
-            Answer false when both A and B can be true simultaneously.
+            For each numbered pair below, decide whether the new fact (B) supersedes the \
+            existing fact (A). Answer true only when B directly corrects, contradicts, or \
+            makes A obsolete. Answer false when both A and B can be true simultaneously.
             """)
-        let prompt = """
-            Existing fact (A): \(existing.content)
-            New fact (B): \(newFact)
-            Does B supersede or correct A?
-            """
-        let result = try? await session.respond(to: prompt, generating: SupersessionDecision.self)
-        return result?.content.supersedes ?? false
+        let result = try? await session.respond(
+            to: "\(list)\n\nReturn one boolean decision per pair, in the same order.",
+            generating: BatchSupersessionDecision.self
+        )
+        let decisions = result?.content.results ?? []
+        guard decisions.count < pairs.count else { return Array(decisions.prefix(pairs.count)) }
+        return decisions + Array(repeating: false, count: pairs.count - decisions.count)
     }
 
     // MARK: - Profile synthesis
@@ -188,43 +192,73 @@ actor MemoryService {
     // MARK: - 3-band absorption pipeline
 
     /// Applies deduplication, reinforcement, and supersession to a list of extracted facts,
-    /// mutating `knownMemories` as entries are added or removed so later facts in the
-    /// same batch do not collide against stale data.
+    /// mutating `knownMemories` as entries are added or removed.
     ///
-    /// - Returns: `true` if at least one new fact was persisted (used to gate profile re-synthesis).
+    /// Uses two passes to collapse N sequential supersession LLM calls into one batch call:
+    ///   Pass 1 — embed + classify each fact; apply band-1 reinforcements immediately.
+    ///   Pass 2 — single batch LLM call for all band-2 pairs, then apply results and save.
+    ///
+    /// - Returns: `true` if at least one new fact was persisted (gates profile re-synthesis).
     private func absorbFacts(
         _ facts: [ExtractedFact],
         into knownMemories: inout [Memory],
         fallbackCategory: Memory.Category
     ) async throws -> Bool {
-        var savedAny = false
+        struct ScoredFact {
+            let content: String
+            let category: Memory.Category
+            let sim: Float
+            let topMatch: Memory?
+        }
+
+        // Pass 1: classify. Band-1 reinforcements are applied immediately since they
+        // only update `lastAccessedAt` and don't change the memory set seen by later facts.
+        var deferred: [ScoredFact] = []
+        var band2Indices: [Int] = []
+
         for fact in facts {
             let trimmed = fact.content.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmed.isEmpty else { continue }
-
+            let category = Memory.Category(rawValue: fact.category) ?? fallbackCategory
             let (sim, topMatch) = await embedder.mostSimilar(of: trimmed, in: knownMemories)
 
-            // ── Band 1 (≥ 0.88): near-identical — reinforce, don't duplicate. ─────
             if sim >= 0.88 {
+                // ── Band 1: near-identical — reinforce in-place, don't duplicate. ──
                 if var reinforce = topMatch {
                     reinforce.lastAccessedAt = Date()
                     try? db.saveMemory(&reinforce)
                 }
-                continue
+            } else {
+                if sim >= 0.70 && topMatch != nil { band2Indices.append(deferred.count) }
+                deferred.append(ScoredFact(content: trimmed, category: category, sim: sim, topMatch: topMatch))
+            }
+        }
+
+        guard !deferred.isEmpty else { return false }
+
+        // Pass 2a: one batch LLM call for all band-2 pairs.
+        var supersessionMap: [Int: Bool] = [:]
+        if !band2Indices.isEmpty {
+            let pairs = band2Indices.map { i in (newFact: deferred[i].content, existing: deferred[i].topMatch!) }
+            let decisions = await batchCheckSupersession(pairs)
+            for (offset, idx) in band2Indices.enumerated() {
+                supersessionMap[idx] = offset < decisions.count ? decisions[offset] : false
+            }
+        }
+
+        // Pass 2b: apply supersessions and save all deferred facts.
+        var savedAny = false
+        for (i, scored) in deferred.enumerated() {
+            // ── Band 2 (0.70–0.87): supersede the old fact if the LLM decided so. ──
+            if scored.sim >= 0.70, let conflicting = scored.topMatch,
+               supersessionMap[i] == true {
+                try? db.deleteMemory(conflicting)
+                knownMemories.removeAll { $0.id == conflicting.id }
             }
 
-            // ── Band 2 (0.70–0.87): related topic — LLM decides supersession. ─────
-            if sim >= 0.70, let conflicting = topMatch {
-                if await checkSupersession(newFact: trimmed, against: conflicting) {
-                    try? db.deleteMemory(conflicting)
-                    knownMemories.removeAll { $0.id == conflicting.id }
-                }
-            }
-
-            // ── Band 3 (< 0.70): genuinely new fact — save. ──────────────────────
-            let category = Memory.Category(rawValue: fact.category) ?? fallbackCategory
-            var memory = Memory.make(content: trimmed, category: category)
-            if let vector = await embedder.embed(trimmed) {
+            // ── Band 2 + 3: save the new fact (band-2 after possible old-fact deletion). ──
+            var memory = Memory.make(content: scored.content, category: scored.category)
+            if let vector = await embedder.embed(scored.content) {
                 memory.embedding = vector.asData
             }
             try db.saveMemory(&memory)
