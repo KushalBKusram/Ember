@@ -45,6 +45,8 @@ final class ConversationViewModel {
     func startObserving() {
         observationTask?.cancel()
         observationTask = Task {
+            let profile = (AppSettings.memoryEnabled && !isIncognito) ? AppSettings.userProfile : ""
+            await llm.prewarmSession(for: conversation.id, userProfile: profile)
             do {
                 let observation = db.messagesObservation(for: conversation.id)
                 for try await updated in observation.values(in: db.dbPool) {
@@ -152,6 +154,9 @@ final class ConversationViewModel {
         // Delete the assistant message and everything after
         for msg in messages[idx...] { try? db.deleteMessage(msg) }
 
+        // Session history no longer matches DB — start fresh so the model doesn't
+        // see the deleted messages in its native transcript.
+        Task { await llm.invalidateSession(for: conversation.id) }
         streamingTask?.cancel()
         streamingTask = Task { await performSendText(userMsg.content) }
     }
@@ -167,6 +172,7 @@ final class ConversationViewModel {
         // Delete everything after the edited message
         for msg in messages[(idx + 1)...] { try? db.deleteMessage(msg) }
 
+        Task { await llm.invalidateSession(for: conversation.id) }
         streamingTask?.cancel()
         streamingTask = Task { await performSendText(newContent) }
     }
@@ -267,23 +273,12 @@ final class ConversationViewModel {
         charQueue = []
         startDrip()
 
-        // Read history from the DB, not the observation array — after regen/edit
-        // the deletions are committed but `messages` may not have caught up yet,
-        // which would leak the just-deleted reply back into the prompt.
-        var history = ((try? db.messages(for: conversation.id)) ?? messages)
-            .filter { ($0.role == .user || $0.role == .assistant) && $0.attachmentPath == nil }
-        // The current question is sent as the prompt itself — drop it from the
-        // history block so the model doesn't see it twice.
-        if let last = history.last, last.role == .user, last.content == text {
-            history.removeLast()
-        }
-
         var firstTokenReceived = false
         var prevLen = 0   // tracks how many chars of the cumulative chunk we've already queued
         do {
             let stream = await llm.streamResponse(
                 to: text,
-                history: history,
+                conversationId: conversation.id,
                 userProfile: userProfile,
                 ragContext: ragContext,
                 scheduleContext: scheduleContext,
@@ -302,9 +297,11 @@ final class ConversationViewModel {
                 }
                 streamingContent = chunk
             }
+        } catch let err as LLMError {
+            self.error = err.errorDescription
         } catch {
             if !Task.isCancelled {
-                self.error = "Model unavailable. Make sure Apple Intelligence is enabled in Settings."
+                self.error = LLMError.modelUnavailable.errorDescription
             }
         }
 

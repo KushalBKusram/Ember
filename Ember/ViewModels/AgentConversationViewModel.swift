@@ -45,6 +45,9 @@ final class AgentConversationViewModel {
     func startObserving() {
         observationTask?.cancel()
         observationTask = Task {
+            let profile = agent.memoryEnabled ? AppSettings.userProfile : ""
+            let override = agent.systemPrompt.isEmpty ? nil : agent.systemPrompt
+            await llm.prewarmSession(for: agent.conversationId, userProfile: profile, systemPromptOverride: override)
             do {
                 let obs = db.messagesObservation(for: agent.conversationId)
                 for try await updated in obs.values(in: db.dbPool) {
@@ -199,21 +202,12 @@ final class AgentConversationViewModel {
         charQueue        = []
         startDrip()
 
-        // Read history from the DB rather than the observation array, which may
-        // not yet include the user message saved above. Then drop that message —
-        // it's sent as the prompt itself and shouldn't appear twice.
-        var history = ((try? db.messages(for: agent.conversationId)) ?? messages)
-            .filter { ($0.role == .user || $0.role == .assistant) && $0.attachmentPath == nil }
-        if let last = history.last, last.role == .user, last.content == text {
-            history.removeLast()
-        }
-
         var firstToken = false
         var prevLen    = 0   // tracks how many chars of the cumulative chunk we've queued
         do {
             let stream = await llm.streamResponse(
                 to: text,
-                history: history,
+                conversationId: agent.conversationId,
                 userProfile: userProfile,
                 ragContext: ragContext,
                 scheduleContext: scheduleContext,
@@ -234,9 +228,11 @@ final class AgentConversationViewModel {
                 }
                 streamingContent = chunk
             }
+        } catch let err as LLMError {
+            self.error = err.errorDescription
         } catch {
             if !Task.isCancelled {
-                self.error = "Model unavailable. Make sure Apple Intelligence is enabled."
+                self.error = LLMError.modelUnavailable.errorDescription
             }
         }
 
