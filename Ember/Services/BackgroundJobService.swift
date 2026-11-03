@@ -209,21 +209,11 @@ actor BackgroundJobService {
         let request               = BGAppRefreshTaskRequest(identifier: Self.taskIdentifier)
         request.earliestBeginDate = soonest
 
-        if #available(iOS 27, *) {
-            BGTaskScheduler.shared.submitTaskRequest(request) { error in
-                if let error {
-                    logger.error("Failed to schedule BGAppRefreshTask: \(error.localizedDescription)")
-                } else {
-                    logger.info("BGAppRefreshTask scheduled — earliest: \(soonest)")
-                }
-            }
-        } else {
-            do {
-                try BGTaskScheduler.shared.submit(request)
-                logger.info("BGAppRefreshTask scheduled — earliest: \(soonest)")
-            } catch {
-                logger.error("Failed to schedule BGAppRefreshTask: \(error.localizedDescription)")
-            }
+        do {
+            try BGTaskScheduler.shared.submit(request)
+            logger.info("BGAppRefreshTask scheduled — earliest: \(soonest)")
+        } catch {
+            logger.error("Failed to schedule BGAppRefreshTask: \(error.localizedDescription)")
         }
     }
 }
