@@ -1,5 +1,7 @@
 import SwiftUI
 import EventKit
+import UserNotifications
+import LocalAuthentication
 
 // MARK: - Root
 
@@ -152,6 +154,8 @@ private struct PermissionsPage: View {
                               benefit: "Know what's on your schedule")
                 permissionRow(icon: "checklist",     color: .blue,   title: "Reminders",
                               benefit: "Help you manage your tasks")
+                permissionRow(icon: "bell.badge",    color: .orange, title: "Notifications",
+                              benefit: "Alert you when agents finish running")
             }
             .padding(.horizontal, 36)
 
@@ -234,6 +238,10 @@ private func requestSystemPermissions() async {
             cont.resume()
         }
     }
+
+    // Notifications — agents send result and tap-to-run alerts
+    try? await UNUserNotificationCenter.current()
+        .requestAuthorization(options: [.alert, .sound, .badge])
 }
 
 // MARK: - Page 3 · Face ID
@@ -269,6 +277,21 @@ private struct FaceIDPage: View {
                     .fontWeight(.medium)
             }
             .padding(.horizontal, 32)
+            .onChange(of: faceIDEnabled) { _, enabled in
+                guard enabled else { return }
+                let context = LAContext()
+                var error: NSError?
+                guard context.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &error) else {
+                    faceIDEnabled = false
+                    return
+                }
+                context.evaluatePolicy(
+                    .deviceOwnerAuthenticationWithBiometrics,
+                    localizedReason: "Confirm Face ID to protect your Ember chats"
+                ) { success, _ in
+                    if !success { Task { @MainActor in faceIDEnabled = false } }
+                }
+            }
 
             Spacer()
 
