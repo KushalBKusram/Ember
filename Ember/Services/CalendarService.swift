@@ -34,7 +34,8 @@ actor CalendarService {
 
         var sections: [String] = []
 
-        if AppSettings.calendarEnabled {
+        if AppSettings.calendarEnabled,
+           EKEventStore.authorizationStatus(for: .event) == .fullAccess {
             let (start, end, label) = detectDateWindow(from: query)
             let events = fetchSortedEvents(from: start, to: end)
             if events.isEmpty {
