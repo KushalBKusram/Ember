@@ -58,7 +58,9 @@ actor MemoryService {
                 """
             let result = try await session.respond(to: prompt, generating: ExtractedMemoryList.self)
             var known = (try? db.activeMemories()) ?? []
-            if try await absorbFacts(result.content.facts, into: &known, fallbackCategory: .episodic) {
+            if try await absorbFacts(result.content.facts, into: &known,
+                                     fallbackCategory: .episodic,
+                                     originalMessage: userMessage.content) {
                 await synthesizeProfile()
             }
         } catch { /* best-effort */ }
@@ -82,18 +84,25 @@ actor MemoryService {
     /// Evaluates multiple (existing, new) pairs in a single LLM session rather than
     /// N sequential sessions. Pads with `false` if the model returns fewer decisions
     /// than pairs — we never silently delete without a confirmed supersession.
-    private func batchCheckSupersession(_ pairs: [(newFact: String, existing: Memory)]) async -> [Bool] {
+    private func batchCheckSupersession(
+        _ pairs: [(newFact: String, existing: Memory)],
+        originalMessage: String = ""
+    ) async -> [Bool] {
         guard !pairs.isEmpty else { return [] }
         let list = pairs.enumerated().map { i, p in
             "Pair \(i + 1):\n  Existing (A): \(p.existing.content)\n  New (B): \(p.newFact)"
         }.joined(separator: "\n\n")
+        let contextNote = originalMessage.isEmpty ? "" :
+            "The new facts were extracted from this original message: \"\(originalMessage)\"\n\n"
         let session = LanguageModelSession(instructions: """
             For each numbered pair below, decide whether the new fact (B) supersedes the \
-            existing fact (A). Answer true only when B directly corrects, contradicts, or \
-            makes A obsolete. Answer false when both A and B can be true simultaneously.
+            existing fact (A). Answer true when B directly corrects, contradicts, or makes \
+            A obsolete — pay special attention when the original message contains correction \
+            signals like "actually", "wait", "no", "I meant", or "correction". \
+            Answer false when both A and B can genuinely be true simultaneously.
             """)
         let result = try? await session.respond(
-            to: "\(list)\n\nReturn one boolean decision per pair, in the same order.",
+            to: "\(contextNote)\(list)\n\nReturn one boolean decision per pair, in the same order.",
             generating: BatchSupersessionDecision.self
         )
         let decisions = result?.content.results ?? []
@@ -183,7 +192,9 @@ actor MemoryService {
             let result = try await session.respond(to: prompt, generating: ExtractedMemoryList.self)
             var known = (try? db.activeMemories()) ?? []
             // Onboarding defaults to .preference when the model returns an unrecognised category.
-            if try await absorbFacts(result.content.facts, into: &known, fallbackCategory: .preference) {
+            if try await absorbFacts(result.content.facts, into: &known,
+                                     fallbackCategory: .preference,
+                                     originalMessage: trimmed) {
                 await synthesizeProfile()
             }
         } catch { /* best-effort */ }
@@ -202,7 +213,8 @@ actor MemoryService {
     private func absorbFacts(
         _ facts: [ExtractedFact],
         into knownMemories: inout [Memory],
-        fallbackCategory: Memory.Category
+        fallbackCategory: Memory.Category,
+        originalMessage: String = ""
     ) async throws -> Bool {
         struct ScoredFact {
             let content: String
@@ -240,7 +252,7 @@ actor MemoryService {
         var supersessionMap: [Int: Bool] = [:]
         if !band2Indices.isEmpty {
             let pairs = band2Indices.map { i in (newFact: deferred[i].content, existing: deferred[i].topMatch!) }
-            let decisions = await batchCheckSupersession(pairs)
+            let decisions = await batchCheckSupersession(pairs, originalMessage: originalMessage)
             for (offset, idx) in band2Indices.enumerated() {
                 supersessionMap[idx] = offset < decisions.count ? decisions[offset] : false
             }
