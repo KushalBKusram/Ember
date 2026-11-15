@@ -64,14 +64,27 @@ final class ConversationViewModel {
         observationTask = nil
     }
 
+    /// Set synchronously so a second tap before `isStreaming` flips (it only does
+    /// after memory/RAG/calendar lookups finish) cannot start a duplicate send.
+    private var isBusy = false
+
+    private func runExclusive(_ work: @escaping () async -> Void) {
+        isBusy = true
+        streamingTask?.cancel()
+        streamingTask = Task {
+            await work()
+            if !Task.isCancelled { isBusy = false }
+        }
+    }
+
     func send(_ text: String) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, !isStreaming else { return }
-        streamingTask?.cancel()
-        streamingTask = Task { await performSend(trimmed) }
+        guard !trimmed.isEmpty, !isStreaming, !isBusy else { return }
+        runExclusive { await self.performSend(trimmed) }
     }
 
     func cancelStreaming() {
+        isBusy = false
         streamingTask?.cancel()
         streamingTask = nil
         dripTask?.cancel()
@@ -147,7 +160,7 @@ final class ConversationViewModel {
     // MARK: - Regenerate & Edit
 
     func regenerate(_ message: Message) {
-        guard !isStreaming else { return }
+        guard !isStreaming, !isBusy else { return }
         guard let idx = messages.firstIndex(where: { $0.id == message.id }),
               let userMsg = messages[..<idx].last(where: { $0.role == .user }) else { return }
 
@@ -157,12 +170,11 @@ final class ConversationViewModel {
         // Session history no longer matches DB — start fresh so the model doesn't
         // see the deleted messages in its native transcript.
         Task { await llm.invalidateSession(for: conversation.id) }
-        streamingTask?.cancel()
-        streamingTask = Task { await performSendText(userMsg.content) }
+        runExclusive { await self.performSendText(userMsg.content) }
     }
 
     func submitEdit(message: Message, newContent: String) {
-        guard !isStreaming,
+        guard !isStreaming, !isBusy,
               let idx = messages.firstIndex(where: { $0.id == message.id }) else { return }
 
         var updated = message
@@ -173,8 +185,7 @@ final class ConversationViewModel {
         for msg in messages[(idx + 1)...] { try? db.deleteMessage(msg) }
 
         Task { await llm.invalidateSession(for: conversation.id) }
-        streamingTask?.cancel()
-        streamingTask = Task { await performSendText(newContent) }
+        runExclusive { await self.performSendText(newContent) }
     }
 
     // MARK: - Private send

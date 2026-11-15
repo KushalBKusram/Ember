@@ -16,7 +16,13 @@ actor RAGService {
 
         let text = try extractText(from: url)
         let title = url.deletingPathExtension().lastPathComponent
-        var doc = RAGDocument(title: title, source: .file, sourceIdentifier: url.lastPathComponent)
+        // Re-importing the same file replaces its index in place rather than
+        // creating a second document with duplicate chunks.
+        let existing = (try? db.allRAGDocuments())?.first {
+            $0.source == .file && $0.sourceIdentifier == url.lastPathComponent
+        }
+        var doc = existing ?? RAGDocument(title: title, source: .file, sourceIdentifier: url.lastPathComponent)
+        doc.indexedAt = Date()
         try db.saveRAGDocument(&doc)
         try db.deleteRAGChunks(for: doc.id)
 

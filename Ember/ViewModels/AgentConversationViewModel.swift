@@ -65,14 +65,27 @@ final class AgentConversationViewModel {
 
     // MARK: - Manual send
 
+    /// Set synchronously so a second tap before `isStreaming` flips (it only does
+    /// after memory/RAG/calendar lookups finish) cannot start a duplicate send.
+    private var isBusy = false
+
+    private func runExclusive(_ work: @escaping () async -> Void) {
+        isBusy = true
+        streamingTask?.cancel()
+        streamingTask = Task {
+            await work()
+            if !Task.isCancelled { isBusy = false }
+        }
+    }
+
     func send(_ text: String) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, !isStreaming else { return }
-        streamingTask?.cancel()
-        streamingTask = Task { await performSend(trimmed, jobId: nil) }
+        guard !trimmed.isEmpty, !isStreaming, !isBusy else { return }
+        runExclusive { await self.performSend(trimmed, jobId: nil) }
     }
 
     func cancelStreaming() {
+        isBusy = false
         streamingTask?.cancel()
         streamingTask = nil
         dripTask?.cancel()
@@ -116,14 +129,13 @@ final class AgentConversationViewModel {
     // MARK: - Job trigger (auto-send from notification or "Run Now")
 
     func triggerJob(_ job: AgentJob) {
-        guard !isStreaming else { return }
-        streamingTask?.cancel()
-        streamingTask = Task {
-            await performSend(job.prompt, jobId: job.id)
+        guard !isStreaming, !isBusy else { return }
+        runExclusive {
+            await self.performSend(job.prompt, jobId: job.id)
             // Mark both job and agent as run.
-            try? await AgentService.shared.touchJobRun(job.id, agentId: agent.id)
+            try? await AgentService.shared.touchJobRun(job.id, agentId: self.agent.id)
             // Refresh the agent so lastRunAt updates in the list.
-            if let updated = try? db.agent(id: agent.id) { agent = updated }
+            if let updated = try? self.db.agent(id: self.agent.id) { self.agent = updated }
         }
     }
 
