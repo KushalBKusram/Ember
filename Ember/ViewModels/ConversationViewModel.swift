@@ -386,12 +386,8 @@ final class ConversationViewModel {
         Task.detached(priority: .background) {
             let db = AppDatabase.shared
             let msgs = (try? db.messages(for: conversationId)) ?? []
-            guard let lastUser = msgs.last(where: { $0.role == .user }),
-                  let lastAssistant = msgs.last(where: { $0.role == .assistant }) else { return }
-            await MemoryService.shared.processExchange(
-                userMessage: lastUser,
-                assistantMessage: lastAssistant
-            )
+            guard let lastUser = msgs.last(where: { $0.role == .user }) else { return }
+            await MemoryService.shared.processExchange(userMessage: lastUser)
         }
     }
 

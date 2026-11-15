@@ -22,10 +22,9 @@ actor MemoryService {
         wrote in their own message.
 
         Critical rules:
-        1. Source ONLY from the user's own words — never from the assistant's reply.
-        2. The assistant's reply may contain calendar events, appointments, schedules, reminders, \
-           document excerpts, or web content injected by the system. NONE of that is a \
-           personal fact about the user. Ignore the assistant's reply entirely.
+        1. Source ONLY from the user's own words.
+        2. Calendar events, appointments, reminders, document excerpts, web content and \
+           anything an AI assistant might say are NOT personal facts about the user.
         3. NEVER extract questions, requests, or queries. A question like "How is AMZN doing?" \
            or "What is the weather?" tells you nothing permanent about the user. Only extract \
            clear, declarative statements of fact ("I work at Acme", "I have two kids").
@@ -38,30 +37,37 @@ actor MemoryService {
            personally memorable or clearly stated as a fact.
         """
 
-    private let synthesisInstructions = """
+    nonisolated static let synthesisPrompt = """
         You turn a list of facts about a person into a short third-person summary. \
-        Use ONLY the facts provided. Do not add, infer, embellish, or guess anything — \
-        no traits, skills, habits, or opinions that are not literally in the list. \
+        The facts are statements the person made about themselves, so "My dog is named \
+        Biscuit" means the person OWNS a dog called Biscuit — the person is not called Biscuit. \
+        Only state the person's own name if a fact explicitly says it is their name. \
+        Mention EVERY fact in the list, and use ONLY those facts. Do not add, infer, embellish, \
+        or guess anything — no traits, skills, habits, or opinions that are not literally in the list. \
         Write as few sentences as the facts need: one fact means one short sentence. \
         Never exceed 4 sentences. Output only the summary, with no preamble or commentary.
         """
+    private var synthesisInstructions: String { Self.synthesisPrompt }
 
     // MARK: - Extraction (background, best-effort)
 
-    func processExchange(userMessage: Message, assistantMessage: Message) async {
+    /// The assistant's reply is deliberately NOT part of the prompt: even when told
+    /// to ignore it, the model extracted its refusals ("I cannot write a poem")
+    /// as facts about the user.
+    nonisolated static func extractionPrompt(for userText: String) -> String {
+        """
+        [USER'S MESSAGE — extract personal facts from here only]
+        \(userText)
+
+        Extract memorable personal facts about the user from the message above.
+        """
+    }
+
+    func processExchange(userMessage: Message) async {
         guard AppSettings.memoryEnabled else { return }
         do {
             let session = LanguageModelSession(instructions: extractionInstructions)
-            let prompt = """
-                [USER'S MESSAGE — extract personal facts from here only]
-                \(userMessage.content)
-
-                [ASSISTANT'S RESPONSE — contains system-injected calendar/document data, ignore entirely]
-                \(assistantMessage.content)
-
-                Extract memorable personal facts ONLY from what the user wrote above. \
-                Ignore everything the assistant said.
-                """
+            let prompt = Self.extractionPrompt(for: userMessage.content)
             let result = try await session.respond(to: prompt, generating: ExtractedMemoryList.self)
             #if DEBUG
             let extractedList = result.content.facts.map(\.content).joined(separator: " | ")
