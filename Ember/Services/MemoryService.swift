@@ -1,5 +1,10 @@
 import Foundation
 import FoundationModels
+import OSLog
+
+#if DEBUG
+private let memLog = Logger(subsystem: "com.kushal.ember", category: "memory-debug")
+#endif
 
 actor MemoryService {
     static let shared = MemoryService()
@@ -57,13 +62,21 @@ actor MemoryService {
                 Ignore everything the assistant said.
                 """
             let result = try await session.respond(to: prompt, generating: ExtractedMemoryList.self)
+            #if DEBUG
+            let extractedList = result.content.facts.map(\.content).joined(separator: " | ")
+            memLog.debug("extracted \(result.content.facts.count, privacy: .public) facts from: \(userMessage.content, privacy: .public) -> \(extractedList, privacy: .public)")
+            #endif
             var known = (try? db.activeMemories()) ?? []
             if try await absorbFacts(result.content.facts, into: &known,
                                      fallbackCategory: .episodic,
                                      originalMessage: userMessage.content) {
                 await synthesizeProfile()
             }
-        } catch { /* best-effort */ }
+        } catch {
+            #if DEBUG
+            memLog.debug("extraction failed: \(String(describing: error), privacy: .public)")
+            #endif
+        }
     }
 
     // MARK: - Query-time retrieval
