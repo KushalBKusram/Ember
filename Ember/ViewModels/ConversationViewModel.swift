@@ -248,7 +248,7 @@ final class ConversationViewModel {
             ragContext      = (try? await ragFetch) ?? []
             scheduleContext = await scheduleFetch ?? ""
             let webResults  = await searchFetch
-            ragContext.append(contentsOf: webResults)
+            ragContext = ragContext.reconciled(withWebSearch: webResults)
             ragSources = ragContext
         }
         perfSignposter.endInterval("rag.retrieve", retrieveState)

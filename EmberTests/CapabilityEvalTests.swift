@@ -74,6 +74,14 @@ struct SemanticRetrievalEvalTests {
             }
         }
 
+        if let note = await embedWithRetry("Rent is due on the 1st") {
+            for q in ["Who is the president of France", "What is the weather in Seattle today", "Explain how photosynthesis works",
+                      "When is my rent due?", "What day do I pay rent", "How much is the electricity bill"] {
+                if let qv = await embedWithRetry(q) {
+                    print("[EVAL] vs-rent-note score=\(String(format: "%.3f", EmbeddingService.cosineSimilarity(qv, note))) \"\(q)\"")
+                }
+            }
+        }
         for noise in ["ping", "hello", "thanks", "ok", "what can you do"] {
             if let nv = await embedWithRetry(noise) {
                 let top = docVectors.map { EmbeddingService.cosineSimilarity(nv, $0) }.max() ?? 0
