@@ -48,7 +48,7 @@ struct SemanticRetrievalEvalTests {
         let embed = EmbeddingService.shared
         var docVectors: [[Float]] = []
         for doc in Self.corpus {
-            guard let v = await embed.embed(doc) else {
+            guard let v = await embedWithRetry(doc) else {
                 Issue.record("Failed to embed corpus doc: \(doc)")
                 return
             }
@@ -58,7 +58,7 @@ struct SemanticRetrievalEvalTests {
         var hits = 0
         var misses: [String] = []
         for (query, expected) in Self.queries {
-            guard let qv = await embed.embed(query) else {
+            guard let qv = await embedWithRetry(query) else {
                 Issue.record("Failed to embed query: \(query)")
                 continue
             }
@@ -133,6 +133,16 @@ struct MemoryBandingEvalTests {
         }
         #expect(misclassifiedCorrections.isEmpty)
     }
+}
+
+/// The first NLEmbedding call in a fresh process can return nil while the
+/// language asset loads, so retry briefly before treating nil as a failure.
+private func embedWithRetry(_ text: String) async -> [Float]? {
+    for _ in 0..<5 {
+        if let v = await EmbeddingService.shared.embed(text) { return v }
+        try? await Task.sleep(nanoseconds: 500_000_000)
+    }
+    return nil
 }
 
 private extension Array {
