@@ -51,7 +51,8 @@ actor LLMService {
         in second person. For all other questions answer factually — never frame \
         general knowledge as a claim about the user.
         Treat injected memory as best-effort; accept corrections plainly. \
-        User messages may open with a <context> block — use it, don't quote it back.
+        Some user messages begin with a background block — use it silently, and never \
+        repeat it or output any XML-style tags.
         """
 
     // Caps runaway replies that eat the 4 096-token session budget.
@@ -201,7 +202,7 @@ actor LLMService {
                 do {
                     let session = self.getSession(for: conversationId, base: base, userProfile: userProfile)
                     let stream = session.streamResponse(to: fullMessage, options: Self.generationOptions)
-                    for try await partial in stream { continuation.yield(partial.content) }
+                    for try await partial in stream { continuation.yield(Self.stripContextTags(partial.content)) }
                     continuation.finish()
                 } catch {
                     guard !Task.isCancelled else { continuation.finish(); return }
@@ -210,7 +211,7 @@ actor LLMService {
                         if let compacted = self.compactSession(for: conversationId) {
                             do {
                                 let stream2 = compacted.streamResponse(to: fullMessage, options: Self.generationOptions)
-                                for try await partial in stream2 { continuation.yield(partial.content) }
+                                for try await partial in stream2 { continuation.yield(Self.stripContextTags(partial.content)) }
                                 continuation.finish()
                             } catch {
                                 guard !Task.isCancelled else { continuation.finish(); return }
@@ -255,10 +256,16 @@ actor LLMService {
         let session = LanguageModelSession(instructions: instructions)
         do {
             let response = try await session.respond(to: userMessage, options: Self.generationOptions)
-            return response.content
+            return Self.stripContextTags(response.content)
         } catch {
             throw classify(error) ?? error
         }
+    }
+
+    nonisolated static func stripContextTags(_ text: String) -> String {
+        text.replacingOccurrences(of: "<context>", with: "")
+            .replacingOccurrences(of: "</context>", with: "")
+            .trimmingCharacters(in: .whitespaces)
     }
 
     // MARK: - Instruction builders
