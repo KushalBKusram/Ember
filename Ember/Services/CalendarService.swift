@@ -35,7 +35,9 @@ actor CalendarService {
         var sections: [String] = []
 
         if AppSettings.calendarEnabled,
-           EKEventStore.authorizationStatus(for: .event) == .fullAccess {
+           EKEventStore.authorizationStatus(for: .event) != .fullAccess {
+            sections.append(Self.accessUnavailableNote)
+        } else if AppSettings.calendarEnabled {
             let (start, end, label) = detectDateWindow(from: query)
             let events = fetchSortedEvents(from: start, to: end)
             if events.isEmpty {
@@ -62,6 +64,14 @@ actor CalendarService {
 
         return sections.isEmpty ? nil : sections.joined(separator: "\n\n")
     }
+
+    /// Without this the model sees no schedule data at all and answers "No events
+    /// listed", which reads as an empty calendar rather than a missing permission.
+    nonisolated static let accessUnavailableNote = """
+        Calendar: UNAVAILABLE. The user has not granted Ember access to their calendar. \
+        Tell the user, in the first person (\"I can't see your calendar\"), that you cannot see their calendar and that they can allow access in \
+        iOS Settings > Privacy & Security > Calendars. Never say there are no events.
+        """
 
     // MARK: - Schedule intent detection
 
