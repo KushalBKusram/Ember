@@ -66,6 +66,11 @@ actor EmbeddingService {
         return (bestScore, bestMemory)
     }
 
+    /// Measured with NLEmbedding: genuine queries score 0.19-0.59 against their
+    /// best match, while chit-chat ("ping", "hello", "thanks") never exceeds 0.17.
+    /// Below this, retrieved context is noise the model tends to recite back.
+    nonisolated static let minRelevance: Float = 0.20
+
     func rankMemories(_ memories: [Memory], for query: String, limit: Int = 8) -> [Memory] {
         guard let queryVec = embed(query) else {
             return Array(memories.prefix(limit))
@@ -76,11 +81,11 @@ actor EmbeddingService {
         let withEmbedding: [Scored] = memories.compactMap { m in
             guard let data = m.embedding, let vec = [Float](data: data) else { return nil }
             return (m, Self.cosineSimilarity(queryVec, vec))
-        }.sorted { $0.score > $1.score }
+        }
+        .filter { $0.score >= Self.minRelevance }
+        .sorted { $0.score > $1.score }
 
-        let withoutEmbedding = memories.filter { $0.embedding == nil }
-
-        return Array((withEmbedding.map(\.memory) + withoutEmbedding).prefix(limit))
+        return Array(withEmbedding.map(\.memory).prefix(limit))
     }
 
     // MARK: - Math

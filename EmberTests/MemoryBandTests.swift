@@ -28,3 +28,18 @@ struct MemoryBandTests {
         #expect(MemoryService.band(forSimilarity: 0) == .new)
     }
 }
+
+@Suite("Retrieval relevance floor")
+struct RelevanceFloorTests {
+
+    @Test("Chit-chat scores (measured max 0.17) fall below the floor")
+    func noiseExcluded() {
+        #expect(0.172 < EmbeddingService.minRelevance)
+    }
+
+    @Test("Genuine query scores (measured min 0.227 for a correct hit) clear the floor")
+    func realQueriesKept() {
+        #expect(0.227 >= EmbeddingService.minRelevance)
+        #expect(0.585 >= EmbeddingService.minRelevance)
+    }
+}

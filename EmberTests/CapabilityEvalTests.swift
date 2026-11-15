@@ -66,10 +66,18 @@ struct SemanticRetrievalEvalTests {
                 (idx, EmbeddingService.cosineSimilarity(qv, dv))
             }
             let best = scored.max { $0.1 < $1.1 }
+            print("[EVAL] score=\(String(format: "%.3f", best?.1 ?? 0)) hit=\(best?.0 == expected) \"\(query)\"")
             if best?.0 == expected {
                 hits += 1
             } else {
                 misses.append("\"\(query)\" → got [\(best?.0 ?? -1)] \(Self.corpus[safe: best?.0 ?? -1] ?? "?"), expected [\(expected)] \(Self.corpus[expected])")
+            }
+        }
+
+        for noise in ["ping", "hello", "thanks", "ok", "what can you do"] {
+            if let nv = await embedWithRetry(noise) {
+                let top = docVectors.map { EmbeddingService.cosineSimilarity(nv, $0) }.max() ?? 0
+                print("[EVAL] noise score=\(String(format: "%.3f", top)) \"\(noise)\"")
             }
         }
 

@@ -128,6 +128,9 @@ actor RAGService {
             }
         }
 
+        candidates = candidates.filter {
+            EmbeddingService.cosineSimilarity(queryVec, $0.embedding) >= EmbeddingService.minRelevance
+        }
         guard !candidates.isEmpty else { return [] }
         return mmr(query: queryVec, candidates: candidates, k: limit)
     }

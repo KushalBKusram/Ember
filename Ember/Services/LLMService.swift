@@ -278,7 +278,9 @@ actor LLMService {
             --- About the USER (not you — you are Ember) ---
             \(userProfile)
             --- End of profile ---
-            Refer to the user in second person. If they correct a fact, acknowledge briefly and move on.
+            Refer to the user in second person. If they correct a fact, acknowledge briefly and move on. \
+            Use these details only when they are directly relevant to what the user asked; \
+            never bring them up otherwise.
             """
     }
 
