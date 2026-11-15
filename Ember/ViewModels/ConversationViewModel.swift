@@ -17,7 +17,15 @@ final class ConversationViewModel {
     var isStreaming = false
     var wasCancelled = false
     var error: String?
-    var isIncognito = false
+    /// The session is prewarmed with the profile when the chat opens, so flipping
+    /// Incognito must rebuild it or the profile keeps leaking into replies.
+    var isIncognito = false {
+        didSet {
+            guard oldValue != isIncognito else { return }
+            let id = conversation.id
+            Task { await llm.invalidateSession(for: id) }
+        }
+    }
     var injectedMemoryCount = 0
     var ragSources: [RAGResult] = []
     #if DEBUG
