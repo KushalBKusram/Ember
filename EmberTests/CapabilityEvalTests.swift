@@ -111,7 +111,7 @@ struct MemoryBandingEvalTests {
         }
 
         for (rel, score, desc) in scores {
-            let band = score >= 0.88 ? "REINFORCE(≥0.88)" : score >= 0.70 ? "SUPERSESSION-CHECK(0.70-0.87)" : "NEW(<0.70)"
+            let band = "\(MemoryService.band(forSimilarity: score))"
             print("[EVAL] \(rel) score=\(String(format: "%.3f", score)) band=\(band)  \(desc)")
         }
 
@@ -127,9 +127,9 @@ struct MemoryBandingEvalTests {
 
         // The real correctness property: a correction must never score high enough
         // to be silently treated as a duplicate and reinforced instead of superseded.
-        let misclassifiedCorrections = scores.filter { $0.0 == .correction && $0.1 >= 0.88 }
+        let misclassifiedCorrections = scores.filter { $0.0 == .correction && MemoryService.band(forSimilarity: $0.1) == .reinforce }
         for bad in misclassifiedCorrections {
-            Issue.record("Correction pair scored ≥0.88 (would be wrongly reinforced, not superseded): \(bad.2)")
+            Issue.record("Correction pair landed in the reinforce band (would be dropped, not superseded): \(bad.2)")
         }
         #expect(misclassifiedCorrections.isEmpty)
     }

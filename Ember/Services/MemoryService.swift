@@ -215,6 +215,18 @@ actor MemoryService {
 
     // MARK: - 3-band absorption pipeline
 
+    enum Band: Equatable { case reinforce, llmCheck, new }
+
+    /// NLEmbedding scores same-shaped corrections ("works at Acme" → "now works
+    /// at Globex") at ~0.92, above the old 0.88 reinforce cutoff, so the new
+    /// fact was silently dropped. Only near-verbatim matches are reinforced
+    /// automatically; everything from 0.70 up gets the LLM supersession check.
+    nonisolated static func band(forSimilarity sim: Float) -> Band {
+        if sim >= 0.97 { return .reinforce }
+        if sim >= 0.70 { return .llmCheck }
+        return .new
+    }
+
     /// Applies deduplication, reinforcement, and supersession to a list of extracted facts,
     /// mutating `knownMemories` as entries are added or removed.
     ///
@@ -247,14 +259,14 @@ actor MemoryService {
             let category = Memory.Category(rawValue: fact.category) ?? fallbackCategory
             let (sim, topMatch) = await embedder.mostSimilar(of: trimmed, in: knownMemories)
 
-            if sim >= 0.88 {
+            if Self.band(forSimilarity: sim) == .reinforce {
                 // ── Band 1: near-identical — reinforce in-place, don't duplicate. ──
                 if var reinforce = topMatch {
                     reinforce.lastAccessedAt = Date()
                     try? db.saveMemory(&reinforce)
                 }
             } else {
-                if sim >= 0.70 && topMatch != nil { band2Indices.append(deferred.count) }
+                if Self.band(forSimilarity: sim) == .llmCheck && topMatch != nil { band2Indices.append(deferred.count) }
                 deferred.append(ScoredFact(content: trimmed, category: category, sim: sim, topMatch: topMatch))
             }
         }
@@ -274,8 +286,8 @@ actor MemoryService {
         // Pass 2b: apply supersessions and save all deferred facts.
         var savedAny = false
         for (i, scored) in deferred.enumerated() {
-            // ── Band 2 (0.70–0.87): supersede the old fact if the LLM decided so. ──
-            if scored.sim >= 0.70, let conflicting = scored.topMatch,
+            // ── LLM-check band (0.70–0.97): supersede the old fact if the LLM decided so. ──
+            if Self.band(forSimilarity: scored.sim) == .llmCheck, let conflicting = scored.topMatch,
                supersessionMap[i] == true {
                 try? db.deleteMemory(conflicting)
                 knownMemories.removeAll { $0.id == conflicting.id }

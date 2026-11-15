@@ -96,8 +96,8 @@ Facts are extracted from every user message and absorbed through a 3-band pipeli
 
 | Similarity to existing memory | Action |
 |---|---|
-| ≥ 0.88 | Reinforce (update `lastAccessedAt`, skip duplicate) |
-| 0.70 – 0.87 | Batch LLM supersession check → maybe delete old, always save new |
+| ≥ 0.97 | Reinforce (update `lastAccessedAt`, skip duplicate) |
+| 0.70 – 0.96 | Batch LLM supersession check → maybe delete old, always save new |
 | < 0.70 | Save as new fact |
 
 Categories: `preference`, `project`, `relationship`, `episodic` (episodic expires after 30 days).

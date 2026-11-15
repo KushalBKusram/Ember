@@ -53,7 +53,7 @@ actor EmbeddingService {
 
     /// Returns the highest cosine similarity between `text` and any memory that has a stored
     /// embedding, together with the memory that produced that score.
-    /// Used for dedup (skip if ≥ 0.88) and supersession (LLM check if 0.70–0.87).
+    /// Used for dedup (skip if ≥ 0.97) and supersession (LLM check if 0.70–0.97).
     func mostSimilar(of text: String, in memories: [Memory]) -> (score: Float, memory: Memory?) {
         guard !memories.isEmpty, let vec = embed(text) else { return (0, nil) }
         var bestScore: Float = 0
