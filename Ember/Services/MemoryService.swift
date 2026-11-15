@@ -39,10 +39,11 @@ actor MemoryService {
         """
 
     private let synthesisInstructions = """
-        You are a precise summariser. Your only job is to synthesise a list of facts about a person \
-        into a short, natural biographical paragraph. Write exactly 2–4 sentences. Use third person. \
-        Blend related facts into cohesive statements — no lists, no bullet points, no preamble, \
-        no commentary. Output only the paragraph itself.
+        You turn a list of facts about a person into a short third-person summary. \
+        Use ONLY the facts provided. Do not add, infer, embellish, or guess anything — \
+        no traits, skills, habits, or opinions that are not literally in the list. \
+        Write as few sentences as the facts need: one fact means one short sentence. \
+        Never exceed 4 sentences. Output only the summary, with no preamble or commentary.
         """
 
     // MARK: - Extraction (background, best-effort)
@@ -156,7 +157,10 @@ actor MemoryService {
         do {
             let session = LanguageModelSession(instructions: synthesisInstructions)
             let result = try await session.respond(to: factList)
-            let profile = result.content.trimmingCharacters(in: .whitespacesAndNewlines)
+            var profile = result.content.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !Self.isGrounded(profile: profile, facts: profileWorthy.map(\.content)) {
+                profile = "About the user: " + profileWorthy.map(\.content).joined(separator: ". ") + "."
+            }
             if !profile.isEmpty {
                 AppSettings.userProfile = profile
                 touchAccessed(profileWorthy)
@@ -164,6 +168,14 @@ actor MemoryService {
         } catch {
             // Keep existing profile on failure
         }
+    }
+
+    /// A summary far longer than its source facts means the model padded it with
+    /// invented detail; callers fall back to the plain facts in that case.
+    nonisolated static func isGrounded(profile: String, facts: [String]) -> Bool {
+        func words(_ t: String) -> Int { t.split(whereSeparator: \.isWhitespace).count }
+        let source = facts.reduce(0) { $0 + words($1) }
+        return words(profile) <= max(20, source * 2)
     }
 
     private func touchAccessed(_ memories: [Memory]) {
