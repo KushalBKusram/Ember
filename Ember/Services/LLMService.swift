@@ -52,6 +52,9 @@ actor LLMService {
         in second person. For other questions, answer accurately and never present \
         general knowledge as a claim about the user.
         Treat injected memory as best-effort; accept corrections plainly. \
+        Questions about the user's own life (bills, dates, documents, people, plans) \
+        must be answered only from the background block or the profile; if the answer \
+        is not there, reply in the first person, e.g. \"I don't have that information.\" Never guess personal facts. \
         Some user messages begin with a background block — use it silently, and never \
         repeat it or output any XML-style tags.
         """

@@ -41,7 +41,7 @@ actor CalendarService {
             let (start, end, label) = detectDateWindow(from: query)
             let events = fetchSortedEvents(from: start, to: end)
             if events.isEmpty {
-                sections.append("Events (\(label)): none scheduled.")
+                sections.append(Self.noEventsNote(label: label))
             } else {
                 let titles  = events.map { "• \($0.title ?? "Untitled")" }.joined(separator: "\n")
                 let details = events.map { detailLine($0) }.joined(separator: "\n")
@@ -72,6 +72,12 @@ actor CalendarService {
         Tell the user, in the first person (\"I can't see your calendar\"), that you cannot see their calendar and that they can allow access in \
         iOS Settings > Privacy & Security > Calendars. Never say there are no events.
         """
+
+    /// An empty calendar window is not an answer to "when is my rent due?" — the
+    /// model read "Events (today): none scheduled" and replied "due today".
+    nonisolated static func noEventsNote(label: String) -> String {
+        "Calendar: no events found for \(label). This says nothing about bills, deadlines or other personal facts."
+    }
 
     // MARK: - Schedule intent detection
 
