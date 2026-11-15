@@ -17,7 +17,7 @@ actor WebSearchService {
     /// Synchronous guards keep the disabled path effectively free.
     func searchIfEnabled(_ query: String, maxResults: Int = 5) async -> [RAGResult] {
         guard AppSettings.webSearchEnabled else { return [] }
-        guard hasSearchIntent(query) else { return [] }
+        guard Self.hasSearchIntent(query) else { return [] }
         return await search(query, maxResults: maxResults)
     }
 
@@ -78,13 +78,20 @@ actor WebSearchService {
 
     // MARK: - Chat search intent (keyword gate for general chat only)
 
-    private func hasSearchIntent(_ query: String) -> Bool {
+    nonisolated static func hasSearchIntent(_ query: String) -> Bool {
         let lower = query.lowercased()
         guard lower.split(separator: " ").count >= 3 else { return false }
 
         let personalPrefixes = ["my ", "i am ", "i'm ", "i have ", "remind me",
                                 "remember that", "my name", "about me"]
         if personalPrefixes.contains(where: { lower.hasPrefix($0) }) { return false }
+
+        // "When is my rent due?" starts with a search keyword but is about the
+        // user's own data; sending it to the web injects unrelated third-party
+        // pages into the answer. Only an explicit request overrides this.
+        let explicitSearch = ["search", "look up", "latest", "news", "find out"]
+        let mentionsUser = lower.range(of: #"\b(my|mine|our|ours|me)\b"#, options: .regularExpression) != nil
+        if mentionsUser && !explicitSearch.contains(where: { lower.contains($0) }) { return false }
 
         let keywords: [String] = [
             "who is", "who was", "who are", "what is", "what are", "what was",
