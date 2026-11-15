@@ -148,10 +148,11 @@ Current test suites: `MemoryExpirationTests`, `MemoryCategoryTests`, `RAGDocumen
 | Memory (extraction, synthesis, retrieval) | ✅ Done |
 | Knowledge sources (files, notes, calendar, reminders) | ✅ Done |
 | Web search | ✅ Done |
-| Agents + background jobs | ✅ Done |
+| Agents + background jobs | 🧪 Beta (labelled in-app; not part of the v1 promise) |
 | Notification routing | ✅ Done |
 | Onboarding | ✅ Done |
 | Face ID lock | ✅ Done |
 | iOS 26/27 dual target | ✅ Done |
 | TestFlight submission | 🔜 Pending iOS 27 simulator runtime |
+| Image generation | 🧪 Beta |
 | Voice input | ❌ Removed from v1 |

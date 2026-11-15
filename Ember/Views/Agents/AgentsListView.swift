@@ -20,7 +20,7 @@ struct AgentsListView: View {
                     agentList
                 }
             }
-            .navigationTitle("Agents")
+            .navigationTitle("Agents · Beta")
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     Button {
@@ -79,7 +79,7 @@ struct AgentsListView: View {
         ContentUnavailableView {
             Label("No Agents Yet", systemImage: "sparkles")
         } description: {
-            Text("Create an agent to get specialised assistance and schedule daily briefings.")
+            Text("Beta: create an agent for specialised help and scheduled briefings. Scheduled runs are experimental.")
         } actions: {
             Button("Create Agent") { showCreate = true }
                 .buttonStyle(.borderedProminent)
