@@ -5,6 +5,7 @@ struct ConversationListView: View {
     @State private var selectedConversation: Conversation?
     @State private var renameTarget: Conversation?
     @State private var renameText = ""
+    @State private var deleteTarget: Conversation?
 
     var body: some View {
         NavigationStack {
@@ -14,6 +15,19 @@ struct ConversationListView: View {
                 } else {
                     conversationList
                 }
+            }
+            .confirmationDialog(
+                "Delete this conversation?",
+                isPresented: Binding(get: { deleteTarget != nil }, set: { if !$0 { deleteTarget = nil } }),
+                titleVisibility: .visible
+            ) {
+                Button("Delete", role: .destructive) {
+                    if let target = deleteTarget { try? viewModel.delete(target) }
+                    deleteTarget = nil
+                }
+                Button("Cancel", role: .cancel) { deleteTarget = nil }
+            } message: {
+                Text("This permanently removes the conversation and its messages.")
             }
             .navigationTitle("Ember")
             .searchable(text: $viewModel.searchQuery, prompt: "Search conversations")
@@ -69,7 +83,7 @@ struct ConversationListView: View {
                     }
                     Divider()
                     Button(role: .destructive) {
-                        try? viewModel.delete(conversation)
+                        deleteTarget = conversation
                     } label: {
                         Label("Delete", systemImage: "trash")
                     }
@@ -85,10 +99,10 @@ struct ConversationListView: View {
                     }
                     .tint(.orange)
                 }
-                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                     Button(role: .destructive) {
                         Haptics.warning()
-                        try? viewModel.delete(conversation)
+                        deleteTarget = conversation
                     } label: {
                         Label("Delete", systemImage: "trash")
                     }

@@ -29,7 +29,7 @@ struct ConversationRowView: View {
 
                     Spacer()
 
-                    Text(conversation.updatedAt.relativeFormatted)
+                    Text(conversation.updatedAt.relativeFormatted())
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -44,10 +44,13 @@ struct ConversationRowView: View {
     }
 }
 
-private extension Date {
-    var relativeFormatted: String {
+extension Date {
+    /// "Just now" for anything within a minute either side of `now` — the
+    /// formatter otherwise renders a just-written timestamp as "in 0s".
+    func relativeFormatted(now: Date = Date()) -> String {
+        if abs(timeIntervalSince(now)) < 60 { return "Just now" }
         let formatter = RelativeDateTimeFormatter()
         formatter.unitsStyle = .abbreviated
-        return formatter.localizedString(for: self, relativeTo: Date())
+        return formatter.localizedString(for: self, relativeTo: now)
     }
 }

@@ -49,7 +49,7 @@ struct DataSourcesView: View {
                         Label(doc.title, systemImage: doc.source.icon)
                             .foregroundStyle(doc.isEnabled ? .primary : .secondary)
                         Spacer()
-                        Text("\(doc.chunkCount) chunks")
+                        Text(doc.chunkCount == 1 ? "1 chunk" : "\(doc.chunkCount) chunks")
                             .font(.caption)
                             .foregroundStyle(.tertiary)
                     }
@@ -114,8 +114,15 @@ struct DataSourcesView: View {
         .sheet(item: $editingNote) { note in
             noteEditor(note)
         }
-        .alert("Error", isPresented: .constant(viewModel.error != nil), actions: {
-            Button("OK") { viewModel.error = nil }
+        .alert(viewModel.error?.localizedCaseInsensitiveContains("denied") == true ? "Access Needed" : "Something Went Wrong",
+               isPresented: .constant(viewModel.error != nil), actions: {
+            if viewModel.error?.localizedCaseInsensitiveContains("denied") == true {
+                Button("Open Settings") {
+                    if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
+                    viewModel.error = nil
+                }
+            }
+            Button("OK", role: .cancel) { viewModel.error = nil }
         }, message: {
             Text(viewModel.error ?? "")
         })
