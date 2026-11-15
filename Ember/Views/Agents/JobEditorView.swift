@@ -7,6 +7,7 @@ struct JobEditorView: View {
     @Environment(\.dismiss) private var dismiss
 
     // Common
+    @State private var isSaving = false
     @State private var name   = ""
     @State private var prompt = ""
 
@@ -99,7 +100,7 @@ struct JobEditorView: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button(isEditing ? "Update" : "Add") { save() }
-                        .disabled(!canSave)
+                        .disabled(!canSave || isSaving)
                 }
             }
             .onAppear { populate() }
@@ -161,6 +162,9 @@ struct JobEditorView: View {
     }
 
     private func save() {
+        // A second tap before the sheet dismisses would otherwise create a duplicate job.
+        guard !isSaving else { return }
+        isSaving = true
         let trimmedName   = name.trimmingCharacters(in: .whitespaces)
         let trimmedPrompt = prompt.trimmingCharacters(in: .whitespaces)
 
