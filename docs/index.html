@@ -12,27 +12,21 @@
 <link rel="author" href="https://kushalbkusram.github.io/">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,400,500,700|Roboto+Slab:100,300,400,500,700">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,400,500,700|Roboto+Slab:300,400,500">
+<link rel="stylesheet" href="https://kushalbkusram.github.io/assets/css/project-theme.css">
+<script src="https://kushalbkusram.github.io/assets/js/project-theme.js"></script>
 <style>
   :root{
-    --bg:#fffaf5; --fg:#1b1612; --muted:#6b5f55; --card:#ffffff; --line:#eadfd3;
-    --accent:#ff8c2a; --accent-2:#e5671a; --accent-fg:#ffffff; --code:#241c16; --code-fg:#f5e9dc;
-  }
-  @media (prefers-color-scheme:dark){
-    :root{ --bg:#14100d; --fg:#f6ede4; --muted:#a99b8d; --card:#1d1814; --line:#33291f; --code:#0e0b09; }
+    --bg:var(--g-bg); --fg:var(--g-fg); --muted:var(--g-muted); --card:var(--g-card); --line:var(--g-line);
+    --accent:var(--g-accent); --accent-2:var(--g-accent); --accent-fg:var(--g-accent-fg); --code:var(--g-code); --code-fg:var(--g-fg);
   }
   *{box-sizing:border-box}
   html{scroll-behavior:smooth}
-  body{margin:0;background:var(--bg);color:var(--fg);font:300 17px/1.6 Roboto,sans-serif;-webkit-font-smoothing:antialiased}
-  h1,h2,h3,h4{font-family:Roboto,sans-serif}
+  body{margin:0;background:var(--bg);color:var(--fg);font:300 17px/1.6 var(--g-font);-webkit-font-smoothing:antialiased}
+  h1,h2,h3,h4{font-family:var(--g-font-head)}
   b,strong{font-weight:500}
   a{color:var(--accent-2);text-decoration:none} a:hover{text-decoration:underline}
   .wrap{max-width:1040px;margin:0 auto;padding:0 20px}
-  nav{display:flex;align-items:center;justify-content:space-between;padding:18px 0}
-  nav .brand{font-weight:400;font-size:21px;color:var(--fg)}
-  nav .links a{margin-left:22px;color:var(--muted);font-size:16px;font-weight:400;white-space:nowrap}
-  nav .links a.site{color:var(--accent-2)}
-  @media (max-width:560px){nav .links a:not(.keep){display:none} nav .links a{margin-left:14px;font-size:15px}}
   .hero{text-align:center;padding:56px 0 24px}
   .flame{font-size:64px;line-height:1}
   h1{font-weight:300;font-size:clamp(36px,6vw,60px);line-height:1.1;margin:14px 0 14px;letter-spacing:-.01em}
@@ -45,7 +39,7 @@
   .badges img{height:20px}
   .gallery{display:flex;gap:18px;overflow-x:auto;padding:36px 4px 28px;scroll-snap-type:x proximity;-webkit-overflow-scrolling:touch}
   .shot{flex:0 0 auto;width:236px;scroll-snap-align:center;text-align:center}
-  .shot img{width:100%;border-radius:30px;border:1px solid var(--line);box-shadow:0 18px 40px rgba(60,30,0,.14);background:var(--card)}
+  .shot img{width:100%;border-radius:30px;border:1px solid var(--line);box-shadow:0 18px 40px rgba(0,0,0,.14);background:var(--card)}
   .shot figcaption{margin-top:12px;font-size:14px;color:var(--muted)}
   section{padding:44px 0}
   h2{font-weight:300;font-size:clamp(28px,4vw,38px);margin:0 0 8px}
@@ -55,12 +49,11 @@
   .card h3{margin:0 0 6px;font-size:18px;font-weight:500}
   .card p{margin:0;color:var(--muted);font-size:15.5px}
   .tag{display:inline-block;font-size:12px;font-weight:500;letter-spacing:.04em;text-transform:uppercase;padding:2px 9px;border-radius:999px;margin-bottom:10px}
-  .tag.core{background:#ffe7d2;color:#a24500} .tag.beta{background:#e8e2ff;color:#4a35b5}
-  @media (prefers-color-scheme:dark){.tag.core{background:#3b2410;color:#ffbf8a}.tag.beta{background:#2a2450;color:#c3b8ff}}
+  .tag.core{background:color-mix(in srgb,var(--accent) 14%,transparent);color:var(--accent)} .tag.beta{background:var(--code);color:var(--muted)}
   .steps{counter-reset:s;display:grid;gap:14px;padding:0;list-style:none}
   .steps li{counter-increment:s;display:flex;gap:14px;align-items:flex-start;background:var(--card);border:1px solid var(--line);border-radius:18px;padding:18px}
   .steps li::before{content:counter(s);flex:0 0 32px;height:32px;border-radius:50%;background:var(--accent);color:#fff;font-weight:500;display:grid;place-items:center}
-  pre{background:var(--code);color:var(--code-fg);padding:20px;border-radius:16px;overflow-x:auto;font:14.5px/1.55 ui-monospace,SFMono-Regular,Menlo,monospace}
+  pre{background:var(--code);color:var(--fg);padding:20px;border-radius:16px;overflow-x:auto;font:14.5px/1.55 ui-monospace,SFMono-Regular,Menlo,monospace}
   table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line);border-radius:16px;overflow:hidden;font-size:15.5px}
   th,td{padding:12px 16px;text-align:left;border-bottom:1px solid var(--line)} tr:last-child td{border-bottom:0}
   th{color:var(--muted);font-weight:500;font-size:13.5px;text-transform:uppercase;letter-spacing:.04em}
@@ -69,11 +62,15 @@
 </style>
 </head>
 <body>
+<div class="site-bar"><div class="site-bar__in">
+  <a class="site-bar__home" href="https://kushalbkusram.github.io/">&larr; Kushal Kusram</a>
+  <a class="site-bar__crumb" href="https://kushalbkusram.github.io/projects/">projects</a>
+  <span class="site-bar__title">🔥 Ember</span>
+  <span class="site-bar__spacer"></span><span class="site-bar__links"><a href="#features">Features</a><a href="#privacy">Privacy</a><a href="#build">Build it</a></span>
+  <a href="https://github.com/KushalBKusram/Ember">GitHub</a>
+  <button class="site-bar__theme" type="button" aria-label="Toggle dark mode"></button>
+</div></div>
 <div class="wrap">
-  <nav>
-    <span class="brand">🔥 Ember</span>
-    <span class="links"><a href="#features">Features</a><a href="#privacy">Privacy</a><a href="#build">Build it</a><a class="keep" href="https://github.com/KushalBKusram/Ember">GitHub</a><a class="keep site" href="https://kushalbkusram.github.io/">Kushal Kusram ↗</a></span>
-  </nav>
 
   <header class="hero">
     <div class="flame">🔥</div>
@@ -154,10 +151,11 @@ open Ember.xcodeproj</code></pre>
     </ol>
   </section>
 
-  <footer>
-    <div>Ember · MIT © 2026 <a href="https://kushalbkusram.github.io/">Kushal Kusram</a></div>
-    <div style="margin-top:6px"><a href="https://kushalbkusram.github.io/">← Back to kushalbkusram.github.io</a> · <a href="https://github.com/KushalBKusram/Ember">Source</a> · <a href="https://github.com/KushalBKusram/Ember/blob/main/CHANGELOG.md">Changelog</a> · <a href="https://github.com/KushalBKusram/Ember/security/advisories/new">Report a security issue</a></div>
-  </footer>
+  <div style="color:var(--muted);font-size:14.5px;margin-top:30px">Ember · MIT © 2026 Kushal Kusram · <a href="https://github.com/KushalBKusram/Ember/blob/main/CHANGELOG.md">Changelog</a> · <a href="https://github.com/KushalBKusram/Ember/security/advisories/new">Report a security issue</a></div>
 </div>
+<footer class="site-foot"><div class="wrapin">
+  <a href="https://kushalbkusram.github.io/">&larr; Back to kushalbkusram.github.io</a> &middot; <a href="https://kushalbkusram.github.io/projects/">All projects</a> &middot; <a href="https://github.com/KushalBKusram/Ember">Source on GitHub</a>
+</div></footer>
+
 </body>
 </html>
