@@ -131,9 +131,12 @@ final class AgentConversationViewModel {
     func triggerJob(_ job: AgentJob) {
         guard !isStreaming, !isBusy else { return }
         runExclusive {
+            // A background refresh may be running this same job.
+            guard await JobRunGuard.shared.tryBegin(job.id) else { return }
             await self.performSend(job.prompt, jobId: job.id)
             // Mark both job and agent as run.
             try? await AgentService.shared.touchJobRun(job.id, agentId: self.agent.id)
+            await JobRunGuard.shared.end(job.id)
             // Refresh the agent so lastRunAt updates in the list.
             if let updated = try? self.db.agent(id: self.agent.id) { self.agent = updated }
         }

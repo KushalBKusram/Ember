@@ -496,6 +496,23 @@ extension AppDatabase {
         }
     }
 
+    /// Saves a completed job run — the prompt, the reply and the last-run stamps —
+    /// in one transaction. Nothing is written if any part fails, so a failed or
+    /// interrupted run leaves no stray prompt behind and is retried cleanly.
+    func recordJobRun(userMessage: Message, assistantMessage: Message, jobId: UUID, agentId: UUID) throws {
+        let now = Date()
+        try dbPool.write { db in
+            try userMessage.insert(db)
+            try assistantMessage.insert(db)
+            try db.execute(
+                sql: "UPDATE conversation SET updatedAt = ? WHERE id = ?",
+                arguments: [now, userMessage.conversationId]
+            )
+            try db.execute(sql: "UPDATE agent_job SET lastRunAt = ? WHERE id = ?", arguments: [now, jobId])
+            try db.execute(sql: "UPDATE agent    SET lastRunAt = ? WHERE id = ?", arguments: [now, agentId])
+        }
+    }
+
     /// Updates `lastAccessedAt` for multiple memories in a single write transaction.
     func touchMemoryAccessDates(ids: [UUID]) throws {
         guard !ids.isEmpty else { return }

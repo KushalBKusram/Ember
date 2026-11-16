@@ -67,20 +67,41 @@ actor BackgroundJobService {
     // MARK: - Run a single job
 
     private func runJob(_ job: AgentJob) async throws {
+        // A foreground run of the same job may be in flight.
+        guard await JobRunGuard.shared.tryBegin(job.id) else {
+            logger.info("Job '\(job.name)' is already running — skipping")
+            return
+        }
+        do {
+            try await runGuardedJob(job)
+        } catch {
+            await JobRunGuard.shared.end(job.id)
+            throw error
+        }
+        await JobRunGuard.shared.end(job.id)
+    }
+
+    private func runGuardedJob(_ job: AgentJob) async throws {
+        // The due list was read earlier; a foreground run may have finished since.
+        guard let fresh = (try? db.jobs(for: job.agentId))?.first(where: { $0.id == job.id }),
+              fresh.isEnabled, fresh.isDue else {
+            logger.info("Job '\(job.name)' is no longer due — skipping")
+            return
+        }
+
         guard let agent = try? db.agent(id: job.agentId) else {
             throw BackgroundJobError.agentNotFound(job.agentId)
         }
 
         logger.debug("Running job '\(job.name)' for agent '\(agent.name)'")
 
-        // ── Persist the user-side message ──────────────────────────────────
-        var userMsg = Message(
+        // Built now so its timestamp precedes the reply, but only saved together
+        // with the reply once the run succeeds.
+        let userMsg = Message(
             conversationId: agent.conversationId,
             role: .user,
             content: job.prompt
         )
-        try db.save(&userMsg)
-        try db.touchConversation(id: agent.conversationId)
 
         // ── Gather context in parallel (mirrors AgentConversationViewModel) ─
         var userProfile      = ""
@@ -91,12 +112,7 @@ actor BackgroundJobService {
             relevantMemories = mems.map(\.content)
         }
 
-        // Drop the user message just saved above — it goes out as the prompt
-        // itself, so leaving it in history would duplicate it.
-        var history = (try? db.messages(for: agent.conversationId)) ?? []
-        if let last = history.last, last.role == .user, last.content == job.prompt {
-            history.removeLast()
-        }
+        let history = (try? db.messages(for: agent.conversationId)) ?? []
 
         async let ragFetch      = agent.ragEnabled
             ? RAGService.shared.retrieve(for: job.prompt, webURLs: [])
@@ -130,16 +146,17 @@ actor BackgroundJobService {
         )
 
         // ── Persist the assistant response ────────────────────────────────
-        var assistantMsg = Message(
+        let assistantMsg = Message(
             conversationId: agent.conversationId,
             role: .assistant,
             content: responseText
         )
-        try db.save(&assistantMsg)
-        try db.touchConversation(id: agent.conversationId)
-
-        // ── Mark the job and agent as run ─────────────────────────────────
-        try db.touchJobAndAgentRunDate(jobId: job.id, agentId: job.agentId)
+        try db.recordJobRun(
+            userMessage: userMsg,
+            assistantMessage: assistantMsg,
+            jobId: job.id,
+            agentId: job.agentId
+        )
 
         // ── Swap tap-to-run notification → result-ready notification ──────
         cancelTapToRunNotification(for: job)
