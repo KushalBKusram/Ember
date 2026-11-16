@@ -11,7 +11,7 @@ It remembers who you are, reads your notes and files, knows your calendar, and a
 ![Platform](https://img.shields.io/badge/iOS-26%2B-blue)
 ![Swift](https://img.shields.io/badge/Swift-6-orange)
 
-[Website](https://kushalbkusram.github.io/Ember/) · [Changelog](CHANGELOG.md) · [Contributing](CONTRIBUTING.md)
+[Website](https://kushalbkusram.github.io/Ember/) · [Changelog](CHANGELOG.md) · [Contributing](CONTRIBUTING.md) · [By Kushal Kusram](https://kushalbkusram.github.io/)
 
 </div>
 
@@ -177,4 +177,4 @@ Issues and pull requests are welcome. Please read [CONTRIBUTING.md](CONTRIBUTING
 
 ## License
 
-[MIT](LICENSE) © 2026 Kushal Kusram
+[MIT](LICENSE) © 2026 [Kushal Kusram](https://kushalbkusram.github.io/)
