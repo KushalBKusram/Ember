@@ -20,6 +20,7 @@ struct AgentsListView: View {
                     agentList
                 }
             }
+            .errorAlert($viewModel.error)
             .navigationTitle("Agents · Beta")
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {

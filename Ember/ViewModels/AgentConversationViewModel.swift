@@ -290,7 +290,11 @@ final class AgentConversationViewModel {
             role: .assistant,
             content: streamingContent
         )
-        try? db.save(&msg)
+        do {
+            try db.save(&msg)
+        } catch {
+            self.error = UserFacingError.message("save the agent's reply, so it won't be here next time you open this chat", error)
+        }
         try? db.touchConversation(id: agent.conversationId)
         streamingContent = ""
     }

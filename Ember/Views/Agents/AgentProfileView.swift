@@ -6,6 +6,7 @@ struct AgentProfileView: View {
     @State private var showingJobEditor  = false
     @State private var editingJob: AgentJob? = nil
     @State private var isSaving = false
+    @State private var error: String?
 
     // Editable fields
     @State private var name: String
@@ -71,12 +72,14 @@ struct AgentProfileView: View {
                         editingJob = job
                     } onToggle: {
                         Task {
-                            try? await service.toggleJob(job)
+                            do { try await service.toggleJob(job) }
+                            catch { self.error = UserFacingError.message("update the job", error) }
                             loadJobs()
                         }
                     } onDelete: {
                         Task {
-                            try? await service.deleteJob(job)
+                            do { try await service.deleteJob(job) }
+                            catch { self.error = UserFacingError.message("delete the job", error) }
                             loadJobs()
                         }
                     }
@@ -90,6 +93,7 @@ struct AgentProfileView: View {
             } header: { Text("Jobs") }
               footer: { Text("Each job schedules a notification. Tapping it opens this agent and auto-runs the prompt.") }
         }
+        .errorAlert($error)
         .navigationTitle("Agent Settings")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -121,8 +125,12 @@ struct AgentProfileView: View {
         updated.memoryEnabled    = memory
         updated.ragEnabled       = rag
         Task {
-            try? await service.updateAgent(updated)
-            agent    = updated
+            do {
+                try await service.updateAgent(updated)
+                agent = updated
+            } catch {
+                self.error = UserFacingError.message("save the agent", error)
+            }
             isSaving = false
         }
     }

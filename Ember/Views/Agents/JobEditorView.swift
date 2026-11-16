@@ -8,6 +8,7 @@ struct JobEditorView: View {
 
     // Common
     @State private var isSaving = false
+    @State private var error: String?
     @State private var name   = ""
     @State private var prompt = ""
 
@@ -92,6 +93,7 @@ struct JobEditorView: View {
                     }
                 }
             }
+            .errorAlert($error)
             .navigationTitle(isEditing ? "Edit Job" : "New Job")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -184,8 +186,15 @@ struct JobEditorView: View {
                 job.intervalMinutes = nil
             }
             Task {
-                try? await service.saveJob(&job)
-                await MainActor.run { dismiss() }
+                do {
+                    try await service.saveJob(&job)
+                    await MainActor.run { dismiss() }
+                } catch {
+                    await MainActor.run {
+                        isSaving = false
+                        self.error = UserFacingError.message("save the job", error)
+                    }
+                }
             }
         } else {
             let job: AgentJob
@@ -209,8 +218,15 @@ struct JobEditorView: View {
             }
             var mutableJob = job
             Task {
-                try? await service.saveJob(&mutableJob)
-                await MainActor.run { dismiss() }
+                do {
+                    try await service.saveJob(&mutableJob)
+                    await MainActor.run { dismiss() }
+                } catch {
+                    await MainActor.run {
+                        isSaving = false
+                        self.error = UserFacingError.message("save the job", error)
+                    }
+                }
             }
         }
     }

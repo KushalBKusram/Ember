@@ -71,7 +71,8 @@ final class DataSourcesViewModel {
 
     func deleteDocument(_ doc: RAGDocument) {
         Task {
-            try? await RAGService.shared.deleteDocument(doc)
+            do { try await RAGService.shared.deleteDocument(doc) }
+            catch { self.error = UserFacingError.message("delete \"\(doc.title)\"", error) }
         }
     }
 
@@ -82,7 +83,8 @@ final class DataSourcesViewModel {
     func toggleDocument(_ doc: RAGDocument) {
         var updated = doc
         updated.isEnabled.toggle()
-        try? db.saveRAGDocument(&updated)
+        do { try db.saveRAGDocument(&updated) }
+        catch { self.error = UserFacingError.message("update \"\(doc.title)\"", error) }
     }
 
     func requestCalendarAccess() {

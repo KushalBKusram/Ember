@@ -7,6 +7,7 @@ final class ConversationListViewModel {
     var conversations: [Conversation] = []
     var lastMessagePreview: [UUID: String] = [:]
     var searchQuery = ""
+    var error: String?
 
     private var observationTask: Task<Void, Never>?
     private let db = AppDatabase.shared
@@ -38,6 +39,11 @@ final class ConversationListViewModel {
     func stopObserving() {
         observationTask?.cancel()
         observationTask = nil
+    }
+
+    /// Runs a write and reports a failure to the user instead of swallowing it.
+    func attempt(_ action: String, _ work: () throws -> Void) {
+        do { try work() } catch { self.error = UserFacingError.message(action, error) }
     }
 
     @discardableResult

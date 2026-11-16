@@ -12,6 +12,7 @@ struct CreateAgentView: View {
     @State private var emoji       = "💡"
     @State private var description = ""
     @State private var isCreating  = false
+    @State private var error: String?
 
     private let service = AgentService.shared
 
@@ -58,6 +59,7 @@ struct CreateAgentView: View {
                 } header: { Text("What does this agent focus on?") }
                   footer: { Text("Ember uses this to generate the agent's system prompt. You can refine it later.") }
             }
+            .errorAlert($error)
             .navigationTitle("New Agent")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -82,10 +84,17 @@ struct CreateAgentView: View {
             description: description.trimmingCharacters(in: .whitespaces)
         )
         Task {
-            try? await service.createAgent(&agent)
-            await MainActor.run {
-                dismiss()
-                onCreate(agent)
+            do {
+                try await service.createAgent(&agent)
+                await MainActor.run {
+                    dismiss()
+                    onCreate(agent)
+                }
+            } catch {
+                await MainActor.run {
+                    isCreating = false
+                    self.error = UserFacingError.message("create the agent", error)
+                }
             }
         }
     }

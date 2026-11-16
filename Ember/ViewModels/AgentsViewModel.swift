@@ -4,6 +4,7 @@ import GRDB
 @MainActor
 @Observable
 final class AgentsViewModel {
+    var error: String?
     var agents: [Agent] = []
     var showingCreate = false
 
@@ -30,6 +31,9 @@ final class AgentsViewModel {
     }
 
     func delete(_ agent: Agent) {
-        Task { try? await service.deleteAgent(agent) }
+        Task {
+            do { try await service.deleteAgent(agent) }
+            catch { self.error = UserFacingError.message("delete the agent", error) }
+        }
     }
 }

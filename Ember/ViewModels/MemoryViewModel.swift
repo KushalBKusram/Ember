@@ -7,6 +7,7 @@ final class MemoryViewModel {
     var memories: [Memory] = []
     var searchQuery = ""
     var isRegeneratingProfile = false
+    var error: String?
 
     private let db = AppDatabase.shared
     private let service = MemoryService.shared
@@ -59,15 +60,24 @@ final class MemoryViewModel {
     }
 
     func delete(_ memory: Memory) {
-        Task { try? await service.delete(memory) }
+        Task {
+            do { try await service.delete(memory) }
+            catch { self.error = UserFacingError.message("delete that memory", error) }
+        }
     }
 
     func toggle(_ memory: Memory) {
-        Task { try? await service.toggle(memory) }
+        Task {
+            do { try await service.toggle(memory) }
+            catch { self.error = UserFacingError.message("update that memory", error) }
+        }
     }
 
     func clearAll() {
-        Task { try? await service.clearAll() }
+        Task {
+            do { try await service.clearAll() }
+            catch { self.error = UserFacingError.message("clear your memories", error) }
+        }
     }
 
     func regenerateProfile() {

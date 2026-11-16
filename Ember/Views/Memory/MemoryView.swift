@@ -96,6 +96,7 @@ struct MemoryView: View {
             }
         }
         .listSectionSpacing(.compact)
+        .errorAlert($viewModel.error)
         .navigationTitle("Memory")
         .navigationBarTitleDisplayMode(.large)
         .searchable(text: $viewModel.searchQuery, prompt: "Search memories")

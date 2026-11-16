@@ -172,8 +172,14 @@ final class ConversationViewModel {
         guard let idx = messages.firstIndex(where: { $0.id == message.id }),
               let userMsg = messages[..<idx].last(where: { $0.role == .user }) else { return }
 
-        // Delete the assistant message and everything after
-        for msg in messages[idx...] { try? db.deleteMessage(msg) }
+        // Delete the assistant message and everything after. If that fails, stop:
+        // sending on would leave the old reply beside the new one.
+        do {
+            for msg in messages[idx...] { try db.deleteMessage(msg) }
+        } catch {
+            self.error = UserFacingError.message("regenerate the reply", error)
+            return
+        }
 
         // Session history no longer matches DB — start fresh so the model doesn't
         // see the deleted messages in its native transcript.
@@ -187,10 +193,14 @@ final class ConversationViewModel {
 
         var updated = message
         updated.content = newContent
-        try? db.save(&updated)
-
-        // Delete everything after the edited message
-        for msg in messages[(idx + 1)...] { try? db.deleteMessage(msg) }
+        do {
+            try db.save(&updated)
+            // Delete everything after the edited message
+            for msg in messages[(idx + 1)...] { try db.deleteMessage(msg) }
+        } catch {
+            self.error = UserFacingError.message("save your edit", error)
+            return
+        }
 
         Task { await llm.invalidateSession(for: conversation.id) }
         runExclusive { await self.performSendText(newContent) }
@@ -365,7 +375,11 @@ final class ConversationViewModel {
             role: .assistant,
             content: streamingContent
         )
-        try? db.save(&assistantMsg)
+        do {
+            try db.save(&assistantMsg)
+        } catch {
+            self.error = UserFacingError.message("save Ember's reply, so it won't be here next time you open this chat", error)
+        }
         try? db.touchConversation(id: conversation.id)
         streamingContent = ""
 

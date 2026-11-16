@@ -22,13 +22,16 @@ struct ConversationListView: View {
                 titleVisibility: .visible
             ) {
                 Button("Delete", role: .destructive) {
-                    if let target = deleteTarget { try? viewModel.delete(target) }
+                    if let target = deleteTarget {
+                        viewModel.attempt("delete the conversation") { try viewModel.delete(target) }
+                    }
                     deleteTarget = nil
                 }
                 Button("Cancel", role: .cancel) { deleteTarget = nil }
             } message: {
                 Text("This permanently removes the conversation and its messages.")
             }
+            .errorAlert($viewModel.error)
             .navigationTitle("Ember")
             .searchable(text: $viewModel.searchQuery, prompt: "Search conversations")
             .toolbar {
@@ -68,7 +71,7 @@ struct ConversationListView: View {
                 }
                 .contextMenu {
                     Button {
-                        try? viewModel.togglePin(conversation)
+                        viewModel.attempt("change the pin") { try viewModel.togglePin(conversation) }
                     } label: {
                         Label(
                             conversation.isPinned ? "Unpin" : "Pin",
@@ -90,7 +93,7 @@ struct ConversationListView: View {
                 }
                 .swipeActions(edge: .leading, allowsFullSwipe: false) {
                     Button {
-                        try? viewModel.togglePin(conversation)
+                        viewModel.attempt("change the pin") { try viewModel.togglePin(conversation) }
                     } label: {
                         Label(
                             conversation.isPinned ? "Unpin" : "Pin",
@@ -136,7 +139,9 @@ struct ConversationListView: View {
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
-                        try? viewModel.rename(conversation, to: renameText.trimmingCharacters(in: .whitespacesAndNewlines))
+                        viewModel.attempt("rename the conversation") {
+                            try viewModel.rename(conversation, to: renameText.trimmingCharacters(in: .whitespacesAndNewlines))
+                        }
                         renameTarget = nil
                     }
                     .disabled(renameText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
@@ -152,9 +157,13 @@ struct ConversationListView: View {
     // MARK: - Actions
 
     private func startNewConversation() {
-        guard let conversation = try? viewModel.createConversation() else { return }
-        Haptics.tap()
-        selectedConversation = conversation
+        do {
+            let conversation = try viewModel.createConversation()
+            Haptics.tap()
+            selectedConversation = conversation
+        } catch {
+            viewModel.error = UserFacingError.message("start a new conversation", error)
+        }
     }
 }
 
