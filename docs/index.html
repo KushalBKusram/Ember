@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ember: a private AI assistant that lives on your iPhone</title>
+<meta name="description" content="Ember is an open-source, on-device AI assistant for iPhone. It remembers you, reads your notes and files, and knows your calendar, with nothing leaving your device.">
+<meta property="og:title" content="Ember">
+<meta property="og:description" content="A private AI assistant that lives entirely on your iPhone.">
+<meta property="og:image" content="assets/05-chat.png">
+<meta name="theme-color" content="#ff8c2a">
+<style>
+  :root{
+    --bg:#fffaf5; --fg:#1b1612; --muted:#6b5f55; --card:#ffffff; --line:#eadfd3;
+    --accent:#ff8c2a; --accent-2:#e5671a; --accent-fg:#ffffff; --code:#241c16; --code-fg:#f5e9dc;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{ --bg:#14100d; --fg:#f6ede4; --muted:#a99b8d; --card:#1d1814; --line:#33291f; --code:#0e0b09; }
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:var(--bg);color:var(--fg);font:17px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased}
+  a{color:var(--accent-2);text-decoration:none} a:hover{text-decoration:underline}
+  .wrap{max-width:1040px;margin:0 auto;padding:0 20px}
+  nav{display:flex;align-items:center;justify-content:space-between;padding:18px 0}
+  nav .brand{font-weight:800;font-size:20px;color:var(--fg)}
+  nav .links a{margin-left:22px;color:var(--muted);font-size:15px;white-space:nowrap}
+  @media (max-width:560px){nav .links a:not(:last-child){display:none}}
+  .hero{text-align:center;padding:56px 0 24px}
+  .flame{font-size:64px;line-height:1}
+  h1{font-size:clamp(36px,6vw,60px);line-height:1.08;margin:14px 0 14px;letter-spacing:-.02em}
+  .lede{max-width:640px;margin:0 auto 28px;color:var(--muted);font-size:clamp(17px,2.2vw,20px)}
+  .btns{display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
+  .btn{display:inline-block;padding:13px 22px;border-radius:14px;font-weight:700;font-size:16px}
+  .btn.primary{background:var(--accent);color:var(--accent-fg)} .btn.primary:hover{background:var(--accent-2);text-decoration:none}
+  .btn.ghost{border:1.5px solid var(--line);color:var(--fg);background:var(--card)} .btn.ghost:hover{border-color:var(--accent);text-decoration:none}
+  .badges{margin-top:18px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap}
+  .badges img{height:20px}
+  .gallery{display:flex;gap:18px;overflow-x:auto;padding:36px 4px 28px;scroll-snap-type:x proximity;-webkit-overflow-scrolling:touch}
+  .shot{flex:0 0 auto;width:236px;scroll-snap-align:center;text-align:center}
+  .shot img{width:100%;border-radius:30px;border:1px solid var(--line);box-shadow:0 18px 40px rgba(60,30,0,.14);background:var(--card)}
+  .shot figcaption{margin-top:12px;font-size:14px;color:var(--muted)}
+  section{padding:44px 0}
+  h2{font-size:clamp(26px,4vw,36px);letter-spacing:-.01em;margin:0 0 8px}
+  .sub{color:var(--muted);margin:0 0 26px;max-width:680px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:16px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:22px}
+  .card h3{margin:0 0 6px;font-size:18px}
+  .card p{margin:0;color:var(--muted);font-size:15.5px}
+  .tag{display:inline-block;font-size:12px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;padding:2px 9px;border-radius:999px;margin-bottom:10px}
+  .tag.core{background:#ffe7d2;color:#a24500} .tag.beta{background:#e8e2ff;color:#4a35b5}
+  @media (prefers-color-scheme:dark){.tag.core{background:#3b2410;color:#ffbf8a}.tag.beta{background:#2a2450;color:#c3b8ff}}
+  .steps{counter-reset:s;display:grid;gap:14px;padding:0;list-style:none}
+  .steps li{counter-increment:s;display:flex;gap:14px;align-items:flex-start;background:var(--card);border:1px solid var(--line);border-radius:18px;padding:18px}
+  .steps li::before{content:counter(s);flex:0 0 32px;height:32px;border-radius:50%;background:var(--accent);color:#fff;font-weight:800;display:grid;place-items:center}
+  pre{background:var(--code);color:var(--code-fg);padding:20px;border-radius:16px;overflow-x:auto;font:14.5px/1.55 ui-monospace,SFMono-Regular,Menlo,monospace}
+  table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line);border-radius:16px;overflow:hidden;font-size:15.5px}
+  th,td{padding:12px 16px;text-align:left;border-bottom:1px solid var(--line)} tr:last-child td{border-bottom:0}
+  th{color:var(--muted);font-weight:600;font-size:13.5px;text-transform:uppercase;letter-spacing:.04em}
+  footer{border-top:1px solid var(--line);margin-top:30px;padding:30px 0 50px;color:var(--muted);font-size:14.5px;text-align:center}
+  code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.92em}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <nav>
+    <span class="brand">🔥 Ember</span>
+    <span class="links"><a href="#features">Features</a><a href="#privacy">Privacy</a><a href="#build">Build it</a><a href="https://github.com/KushalBKusram/Ember">GitHub</a></span>
+  </nav>
+
+  <header class="hero">
+    <div class="flame">🔥</div>
+    <h1>A private AI that lives<br>on your iPhone.</h1>
+    <p class="lede">Ember remembers who you are, reads your notes and files, and knows your calendar. It answers with Apple's on-device model, so nothing you type ever leaves your phone.</p>
+    <div class="btns">
+      <a class="btn primary" href="#build">Build it yourself</a>
+      <a class="btn ghost" href="https://github.com/KushalBKusram/Ember">View on GitHub</a>
+    </div>
+    <div class="badges">
+      <a href="https://github.com/KushalBKusram/Ember/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/KushalBKusram/Ember/actions/workflows/ci.yml/badge.svg"></a>
+      <img alt="MIT license" src="https://img.shields.io/badge/License-MIT-orange.svg">
+      <img alt="iOS 26+" src="https://img.shields.io/badge/iOS-26%2B-blue">
+      <img alt="Swift 6" src="https://img.shields.io/badge/Swift-6-orange">
+    </div>
+  </header>
+
+  <div class="gallery" aria-label="Screenshots">
+    <figure class="shot"><img src="assets/05-chat.png" alt="Chat answer citing the user's own note" loading="lazy"><figcaption>Answers cite your own notes</figcaption></figure>
+    <figure class="shot"><img src="assets/08-memory.png" alt="Memory screen" loading="lazy"><figcaption>See and edit what Ember knows</figcaption></figure>
+    <figure class="shot"><img src="assets/06-knowledge.png" alt="Knowledge sources" loading="lazy"><figcaption>Notes, files, calendar, reminders</figcaption></figure>
+    <figure class="shot"><img src="assets/10-agents.png" alt="Agents (Beta)" loading="lazy"><figcaption>Agents (Beta)</figcaption></figure>
+    <figure class="shot"><img src="assets/07-newchat.png" alt="New chat with suggestions" loading="lazy"><figcaption>A fresh chat</figcaption></figure>
+    <figure class="shot"><img src="assets/04-identity.png" alt="Onboarding: tell Ember about you" loading="lazy"><figcaption>Tell it about you, once</figcaption></figure>
+    <figure class="shot"><img src="assets/03-faceid.png" alt="Face ID lock setup" loading="lazy"><figcaption>Locked with Face ID</figcaption></figure>
+    <figure class="shot"><img src="assets/09-settings.png" alt="Settings" loading="lazy"><figcaption>You stay in control</figcaption></figure>
+  </div>
+
+  <section id="privacy">
+    <h2>Trust, by design</h2>
+    <p class="sub">Cloud assistants see everything you type. Ember trades raw capability for trust.</p>
+    <div class="grid">
+      <div class="card"><h3>Nothing leaves the device</h3><p>No account, no sync, no analytics, no tracking. Your data lives in a local database on your iPhone.</p></div>
+      <div class="card"><h3>It really remembers you</h3><p>Facts come from your own words, are corrected when you correct them, and are fully visible in the Memory screen.</p></div>
+      <div class="card"><h3>It shows its sources</h3><p>Answers that used your notes or the web say so. Every source can be switched off.</p></div>
+      <div class="card"><h3>It says when it doesn't know</h3><p>Ask about your own life without a source and Ember tells you so, instead of guessing.</p></div>
+    </div>
+  </section>
+
+  <section id="features">
+    <h2>What it does</h2>
+    <p class="sub">The core is small and held to a high bar. Everything experimental is labelled Beta.</p>
+    <div class="grid">
+      <div class="card"><span class="tag core">Core</span><h3>Private chat</h3><p>Streaming replies on Apple Foundation Models, regenerate, edit, cancel, and an Incognito mode.</p></div>
+      <div class="card"><span class="tag core">Core</span><h3>Memory</h3><p>Learns preferences, projects and relationships. Supersedes outdated facts. Writes a short, grounded profile.</p></div>
+      <div class="card"><span class="tag core">Core</span><h3>Files and notes</h3><p>Import PDFs and text or write notes. Embedded and searched on-device with source attribution.</p></div>
+      <div class="card"><span class="tag core">Core</span><h3>Calendar and reminders</h3><p>Read-only context at question time. Tells you plainly if access is missing.</p></div>
+      <div class="card"><span class="tag beta">Beta</span><h3>Agents and scheduled jobs</h3><p>Custom agents that run on a schedule and notify you with the result.</p></div>
+      <div class="card"><span class="tag beta">Beta</span><h3>Web search</h3><p>Opt-in and off by default. Questions about your own data never go to the web.</p></div>
+    </div>
+  </section>
+
+  <section id="how">
+    <h2>Honest about its limits</h2>
+    <p class="sub">Ember is a single-developer, open-source project. Here is where it stands.</p>
+    <table>
+      <tr><th>Area</th><th>Reality</th></tr>
+      <tr><td>Retrieval accuracy</td><td>58% top-1 on a 12-query evaluation set (Apple's built-in sentence embedding)</td></tr>
+      <tr><td>Duplicate memories</td><td>Paraphrased facts can be stored as separate entries</td></tr>
+      <tr><td>Scheduled jobs</td><td>Timing depends on iOS background refresh (Beta)</td></tr>
+      <tr><td>Hardware</td><td>Needs Apple Intelligence: iPhone 15 Pro or newer, iOS 26+</td></tr>
+      <tr><td>Tests</td><td>95 automated tests, run in CI on every push</td></tr>
+    </table>
+  </section>
+
+  <section id="build">
+    <h2>Build it yourself</h2>
+    <p class="sub">Ember is MIT licensed. You need Xcode 26 or later and an Apple Intelligence capable iPhone or the Xcode 27 simulator.</p>
+    <pre><code>brew install xcodegen
+git clone https://github.com/KushalBKusram/Ember.git
+cd Ember
+xcodegen generate
+open Ember.xcodeproj</code></pre>
+    <ol class="steps" style="margin-top:18px">
+      <li><div>Pick an iPhone simulator (or your own iPhone, with your own signing team) and press <b>Run</b>.</div></li>
+      <li><div>Turn on Apple Intelligence on the device or simulator so the model can answer.</div></li>
+      <li><div>Read <a href="https://github.com/KushalBKusram/Ember/blob/main/CONTRIBUTING.md">CONTRIBUTING.md</a> if you'd like to help. Issues and pull requests are welcome.</div></li>
+    </ol>
+  </section>
+
+  <footer>
+    <div>Ember · MIT © 2026 Kushal Kusram</div>
+    <div style="margin-top:6px"><a href="https://github.com/KushalBKusram/Ember">Source</a> · <a href="https://github.com/KushalBKusram/Ember/blob/main/CHANGELOG.md">Changelog</a> · <a href="https://github.com/KushalBKusram/Ember/security/advisories/new">Report a security issue</a></div>
+  </footer>
+</div>
+</body>
+</html>
