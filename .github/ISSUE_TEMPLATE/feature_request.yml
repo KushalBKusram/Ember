@@ -1,0 +1,19 @@
+name: Feature request
+description: Suggest an improvement
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would this solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behaviour
+      description: What should happen, and what should happen when it fails (permission, model, storage)?
+  - type: markdown
+    attributes:
+      value: |
+        Ember favours bounded, testable behaviour. Features that expand autonomous behaviour or send data off the device are unlikely to be accepted.

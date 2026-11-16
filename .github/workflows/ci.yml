@@ -1,0 +1,65 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Build and test
+    runs-on: macos-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show toolchain
+        run: |
+          xcodebuild -version
+          xcrun simctl list runtimes
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Pick an iPhone simulator
+        id: sim
+        run: |
+          UDID=$(xcrun simctl list devices available -j | python3 -c "
+          import json,sys
+          d=json.load(sys.stdin)['devices']
+          best=None
+          for rt,devs in d.items():
+              if 'iOS' not in rt: continue
+              for x in devs:
+                  if x['name'].startswith('iPhone') and 'Pro' not in x['name'] and 'Max' not in x['name']:
+                      best=x['udid']
+          print(best or '')
+          ")
+          echo "udid=$UDID" >> "$GITHUB_OUTPUT"
+          echo "Using simulator $UDID"
+
+      - name: Test
+        run: |
+          set -o pipefail
+          xcodebuild test \
+            -project Ember.xcodeproj \
+            -scheme Ember \
+            -destination "id=${{ steps.sim.outputs.udid }}" \
+            -skip-testing:EmberTests/SemanticRetrievalEvalTests \
+            -skip-testing:EmberTests/MemoryBandingEvalTests \
+            | tee test.log | grep -E "✘|error:|Test run with" || true
+          grep -q "Test run with .* passed" test.log
+
+      - name: Upload log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-log
+          path: test.log
