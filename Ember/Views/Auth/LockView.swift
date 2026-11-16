@@ -57,6 +57,18 @@ struct LockView: View {
         }
     }
 
+    /// A cancelled or interrupted prompt (user cancel, app backgrounded, system
+    /// pre-empted it) is not a failed attempt and shouldn't say "failed".
+    nonisolated static func isGenuineFailure(_ error: Error?) -> Bool {
+        guard let error = error as? LAError else { return true }
+        switch error.code {
+        // notInteractive: the prompt was requested while the app was still inactive
+        // (launch / returning from background); the next attempt succeeds.
+        case .userCancel, .systemCancel, .appCancel, .notInteractive: return false
+        default: return true
+        }
+    }
+
     private func authenticate() {
         guard !authenticating else { return }
         authenticating = true
@@ -68,10 +80,10 @@ struct LockView: View {
             context.evaluatePolicy(
                 .deviceOwnerAuthentication,
                 localizedReason: "Unlock Ember to access your private conversations"
-            ) { success, _ in
+            ) { success, authError in
                 DispatchQueue.main.async {
                     isUnlocked = success
-                    failed = !success
+                    failed = !success && Self.isGenuineFailure(authError)
                     authenticating = false
                     if success { Haptics.success() } else { Haptics.warning() }
                 }
